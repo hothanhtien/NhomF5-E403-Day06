@@ -13,7 +13,7 @@ services:
   # ── Nginx: serve frontend + proxy API ────────────────────────────
   nginx:
     image: nginx:1.27-alpine
-    container_name: counter-nginx
+    container_name: tienop-nginx
     # Local test: mở port 8080 để browser truy cập
     # Production: bỏ dòng ports này, cloudflared sẽ kết nối qua internal network
     ports:
