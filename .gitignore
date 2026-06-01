@@ -14,3 +14,6 @@ dist/
 build/
 *.log
 
+# Cloudflare tunnel — credentials + config, never commit
+cloudflared/
+
