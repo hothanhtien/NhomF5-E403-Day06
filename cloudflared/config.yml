@@ -1,0 +1,7 @@
+tunnel: 8e635b37-a5c8-41ba-9189-a779865092ca
+credentials-file: /etc/cloudflared/8e635b37-a5c8-41ba-9189-a779865092ca.json
+
+ingress:
+  - hostname: tienop.khoav4.com
+    service: http://tienop-nginx:80
+  - service: http_status:404

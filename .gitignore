@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.local
+*.pem
+*.key
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+node_modules/
+dist/
+build/
+*.log
+
+# Cloudflare tunnel secrets — NEVER commit
+cloudflared/*.json
+cloudflared/.cloudflared/

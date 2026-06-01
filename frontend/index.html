@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>COUNTER.exe // press to count</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- Scanlines + grain overlay -->
+  <div class="scanlines" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- Floating status bar -->
+  <header class="status">
+    <div class="status__left">
+      <span class="dot"></span>
+      <span class="status__label">SYSTEM ONLINE</span>
+    </div>
+    <div class="status__center">COUNTER_OS v0.1.0</div>
+    <div class="status__right">
+      <span id="clock">--:--:--</span>
+    </div>
+  </header>
+
+  <main class="stage">
+    <!-- Big type label -->
+    <p class="kicker">// tap the button. count things. that's it.</p>
+
+    <!-- The number — the hero -->
+    <div class="counter" id="counter" data-value="0">
+      <span class="counter__num" id="num">000</span>
+      <span class="counter__caret" aria-hidden="true"></span>
+    </div>
+
+    <!-- Button -->
+    <div class="cta-row">
+      <button class="btn btn--primary" id="inc" type="button">
+        <span class="btn__bracket">[</span>
+        <span class="btn__label">PRESS TO COUNT</span>
+        <span class="btn__bracket">]</span>
+        <span class="btn__key">SPACE</span>
+      </button>
+    </div>
+
+    <!-- Mini actions -->
+    <div class="mini">
+      <button class="chip" id="dec" type="button">−1</button>
+      <button class="chip chip--danger" id="reset" type="button">RESET</button>
+    </div>
+
+    <!-- Marquee log -->
+    <div class="log" id="log" aria-live="polite"></div>
+  </main>
+
+  <footer class="foot">
+    <span>↑/↓ to adjust · R to reset · built with FastAPI</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

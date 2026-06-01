@@ -1,0 +1,393 @@
+/* =========================================================
+   COUNTER.exe — brutalist terminal aesthetic
+   ========================================================= */
+
+:root {
+  --bg: #0b0d0c;
+  --bg-2: #111514;
+  --ink: #d6ffe1;
+  --ink-dim: #6b8a76;
+  --accent: #00ff88;
+  --accent-2: #ff3b3b;
+  --accent-3: #f0ff00;
+  --line: rgba(0, 255, 136, 0.18);
+  --line-strong: rgba(0, 255, 136, 0.55);
+  --shadow-glow: 0 0 40px rgba(0, 255, 136, 0.35);
+  --grid: rgba(0, 255, 136, 0.06);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 50% 110%, rgba(0, 255, 136, 0.08), transparent 60%),
+    radial-gradient(800px 400px at 50% -10%, rgba(0, 255, 136, 0.05), transparent 60%),
+    linear-gradient(180deg, #060806 0%, #0b0d0c 50%, #060806 100%);
+  position: relative;
+}
+
+/* Faint grid backdrop */
+body::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  pointer-events: none;
+}
+
+/* Scanlines */
+.scanlines {
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 255, 136, 0.03) 0px,
+    rgba(0, 255, 136, 0.03) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  z-index: 50;
+  animation: scan 8s linear infinite;
+}
+@keyframes scan {
+  from { background-position: 0 0; }
+  to   { background-position: 0 100px; }
+}
+
+/* Film grain */
+.grain {
+  position: fixed; inset: -20%;
+  pointer-events: none;
+  z-index: 51;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  animation: grain 0.6s steps(4) infinite;
+}
+@keyframes grain {
+  0%   { transform: translate(0,0); }
+  25%  { transform: translate(-2%, 1%); }
+  50%  { transform: translate(1%, -2%); }
+  75%  { transform: translate(-1%, -1%); }
+  100% { transform: translate(0,0); }
+}
+
+/* =========================================================
+   Status bar
+   ========================================================= */
+.status {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(6px);
+  position: relative;
+  z-index: 5;
+}
+.status__left   { display: flex; align-items: center; gap: 10px; justify-self: start; }
+.status__center { justify-self: center; color: var(--accent); }
+.status__right  { justify-self: end; font-variant-numeric: tabular-nums; }
+.dot {
+  width: 8px; height: 8px;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+  border-radius: 50%;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* =========================================================
+   Stage
+   ========================================================= */
+.stage {
+  display: grid;
+  place-items: center;
+  padding: 32px 24px 16px;
+  position: relative;
+  z-index: 2;
+}
+
+.kicker {
+  font-size: 12px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 18px;
+  align-self: end;
+  animation: fadeIn 0.6s 0.1s ease both;
+}
+
+/* Hero counter */
+.counter {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 800;
+  font-size: clamp(140px, 28vw, 360px);
+  line-height: 0.85;
+  color: var(--accent);
+  text-shadow:
+    0 0 1px rgba(0, 255, 136, 0.4),
+    0 0 20px rgba(0, 255, 136, 0.25),
+    0 0 60px rgba(0, 255, 136, 0.15);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  padding: 8px 24px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(0, 255, 136, 0.04), transparent 80%);
+  position: relative;
+  animation: rise 0.7s 0.15s cubic-bezier(.2,.7,.2,1) both;
+}
+.counter::before, .counter::after {
+  content: "";
+  position: absolute;
+  width: 12px; height: 12px;
+  border: 1px solid var(--accent);
+}
+.counter::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.counter::after  { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+
+.counter__num {
+  display: inline-block;
+  transition: transform 0.18s cubic-bezier(.2,.7,.2,1), color 0.2s;
+}
+.counter.is-bump .counter__num {
+  transform: translateY(-6px) scale(1.02);
+}
+.counter.is-minus .counter__num {
+  color: var(--accent-2);
+  text-shadow: 0 0 20px rgba(255, 59, 59, 0.4);
+}
+.counter.is-reset .counter__num {
+  animation: shake 0.4s ease;
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+.counter__caret {
+  display: inline-block;
+  width: 0.08em;
+  height: 0.7em;
+  background: var(--accent);
+  margin-left: 0.04em;
+  align-self: center;
+  animation: blink 1s steps(2) infinite;
+  box-shadow: 0 0 8px var(--accent);
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* =========================================================
+   CTA
+   ========================================================= */
+.cta-row {
+  margin-top: 36px;
+  display: flex;
+  justify-content: center;
+  animation: rise 0.7s 0.3s cubic-bezier(.2,.7,.2,1) both;
+}
+
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 32px;
+  background: var(--accent);
+  color: #001a0d;
+  border: 1px solid var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.2s ease, background 0.15s ease;
+  box-shadow:
+    6px 6px 0 #003d1d,
+    0 0 40px rgba(0, 255, 136, 0.25);
+  user-select: none;
+}
+.btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow:
+    8px 8px 0 #003d1d,
+    0 0 60px rgba(0, 255, 136, 0.45);
+}
+.btn:active {
+  transform: translate(4px, 4px);
+  box-shadow:
+    2px 2px 0 #003d1d,
+    0 0 20px rgba(0, 255, 136, 0.3);
+}
+.btn:focus-visible {
+  outline: 2px dashed var(--accent-3);
+  outline-offset: 6px;
+}
+.btn__bracket { opacity: 0.55; }
+.btn__label   { white-space: nowrap; }
+.btn__key {
+  font-size: 10px;
+  padding: 3px 7px;
+  background: #001a0d;
+  color: var(--accent);
+  border: 1px solid #001a0d;
+  letter-spacing: 0.15em;
+  margin-left: 6px;
+}
+
+/* =========================================================
+   Mini chips
+   ========================================================= */
+.mini {
+  margin-top: 22px;
+  display: flex;
+  gap: 12px;
+  animation: rise 0.7s 0.45s cubic-bezier(.2,.7,.2,1) both;
+}
+.chip {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--ink-dim);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.chip:hover {
+  color: var(--accent);
+  border-color: var(--line-strong);
+  background: rgba(0, 255, 136, 0.05);
+}
+.chip--danger:hover {
+  color: var(--accent-2);
+  border-color: rgba(255, 59, 59, 0.5);
+  background: rgba(255, 59, 59, 0.05);
+}
+
+/* =========================================================
+   Log (live event feed)
+   ========================================================= */
+.log {
+  position: absolute;
+  bottom: 56px;
+  left: 24px;
+  right: 24px;
+  height: 28px;
+  display: flex;
+  gap: 18px;
+  font-size: 11px;
+  color: var(--ink-dim);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.log__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  animation: slide 0.5s ease both;
+}
+.log__item--up    { color: var(--accent); }
+.log__item--down  { color: var(--accent-2); }
+.log__item--rst   { color: var(--accent-3); }
+@keyframes slide {
+  from { transform: translateX(-12px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+/* =========================================================
+   Footer
+   ========================================================= */
+.foot {
+  border-top: 1px solid var(--line);
+  padding: 12px 24px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  background: rgba(0,0,0,0.4);
+  position: relative;
+  z-index: 5;
+}
+
+/* =========================================================
+   Animations
+   ========================================================= */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Click ripple effect (added via JS) */
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  background: var(--accent);
+  opacity: 0.5;
+  transform: scale(0);
+  animation: ripple 0.6s ease-out forwards;
+}
+@keyframes ripple {
+  to {
+    transform: scale(20);
+    opacity: 0;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Small screens */
+@media (max-width: 640px) {
+  .status { font-size: 9px; padding: 10px 14px; }
+  .kicker { font-size: 10px; letter-spacing: 0.25em; }
+  .btn { font-size: 14px; padding: 14px 20px; gap: 8px; }
+  .btn__key { display: none; }
+  .stage { padding: 16px; }
+}
