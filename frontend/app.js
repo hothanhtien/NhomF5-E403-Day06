@@ -1,5 +1,5 @@
 (() => {
-  // Inline polyline6 decoder (replaces @mapbox/polyline CDN which doesn't expose a global)
+  // ── Polyline6 decoder ─────────────────────────────────
   function decodePolyline(str, precision) {
     const factor = Math.pow(10, precision || 5);
     let index = 0, lat = 0, lng = 0;
@@ -11,42 +11,63 @@
       shift = 0; result = 0;
       do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
       lng += (result & 1) ? ~(result >> 1) : (result >> 1);
-      coords.push([lat / factor, lng / factor]);
+      coords.push([lng / factor, lat / factor]);
     }
     return coords;
   }
 
   const API_BASE = "";
 
-  // Load Mapbox token from backend config (fallback: ?mapbox= query param)
+  // ── Load Mapbox token then init ────────────────────────
+  // Token may arrive before or after plan is ready; we resolve a promise
+  let mapboxTokenReady = false;
   const params = new URLSearchParams(location.search);
   const tokenFromUrl = params.get("mapbox") || "";
   if (tokenFromUrl) {
     mapboxgl.accessToken = tokenFromUrl;
+    mapboxTokenReady = true;
   } else {
     fetch(`${API_BASE}/api/config`)
       .then(r => r.json())
-      .then(cfg => { if (cfg.mapboxToken) mapboxgl.accessToken = cfg.mapboxToken; })
+      .then(cfg => {
+        if (cfg.mapboxToken) {
+          mapboxgl.accessToken = cfg.mapboxToken;
+          mapboxTokenReady = true;
+          // If plan was rendered before token arrived, re-render map
+          if (currentPlan) renderMap(currentPlan.mapData);
+        }
+      })
       .catch(() => {});
   }
 
-  // State
+  // ── State ──────────────────────────────────────────────
   let conversation = [];
   let currentPlan = null;
   let map = null;
   let renderedLayerIds = [];
+  const markersByDay = [];
+  let activeMarkerEl = null;
 
-  // DOM refs
-  const messagesEl = document.getElementById("messages");
-  const userInputEl = document.getElementById("user-input");
-  const sendBtn = document.getElementById("send-btn");
-  const loadingEl = document.getElementById("loading");
-  const resultEl = document.getElementById("result");
-  const heroEl = document.getElementById("hero");
+  // ── DOM refs ───────────────────────────────────────────
+  const $ = (id) => document.getElementById(id);
+  const messagesEl = $("messages");
+  const userInputEl = $("user-input");
+  const sendBtn = $("send-btn");
+  const inlineLoadingEl = $("inline-loading");
+  const inlineLoadingTextEl = $("inline-loading-text");
+  const resultEl = $("result");
+  const chatSectionEl = $("chat-section");
+  const topbarHintEl = $("topbar-hint");
 
-  // ── Helpers ──────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────
+  const fmt = (n) => (n == null) ? "Miễn phí" : (n.toLocaleString("vi-VN") + " ₫");
+  const TYPE_LABEL = { attraction: "Tham quan", cafe: "Cafe", restaurant: "Nhà hàng", "check-in": "Check-in", hotel: "Khách sạn", food: "Ăn uống" };
+  const TYPE_ICON  = { attraction: "🗺", cafe: "☕", restaurant: "🍜", "check-in": "📸", hotel: "🏨", food: "🍽" };
 
-  const fmt = (n) => n ? n.toLocaleString("vi-VN") + " ₫" : "Miễn phí";
+  function escapeHtml(s) {
+    if (s == null) return "";
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
 
   const addMessage = (role, content) => {
     conversation.push({ role, content });
@@ -54,206 +75,514 @@
     el.className = `msg msg--${role}`;
     el.textContent = content;
     messagesEl.appendChild(el);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    // Small delay so spinner is visible below last message
+    requestAnimationFrame(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
   };
+
+  // ── Loading (inline) ───────────────────────────────────
+  const loadingStages = [
+    "Phân tích yêu cầu…",
+    "Tìm địa điểm phù hợp…",
+    "Tính toán tuyến đường…",
+    "Tối ưu lịch trình…",
+    "Kiểm tra ngân sách…",
+    "Sắp xếp ảnh địa điểm…",
+  ];
 
   const setLoading = (on) => {
-    loadingEl.classList.toggle("hidden", !on);
-    heroEl.classList.toggle("hidden", on);
-    resultEl.classList.add("hidden");
+    inlineLoadingEl.classList.toggle("hidden", !on);
+    sendBtn.disabled = on;
+    if (on) {
+      let i = 0;
+      inlineLoadingTextEl.textContent = loadingStages[0];
+      if (window.__loadingInterval) clearInterval(window.__loadingInterval);
+      window.__loadingInterval = setInterval(() => {
+        i = (i + 1) % loadingStages.length;
+        inlineLoadingTextEl.textContent = loadingStages[i];
+      }, 1800);
+      requestAnimationFrame(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
+    } else {
+      if (window.__loadingInterval) { clearInterval(window.__loadingInterval); window.__loadingInterval = null; }
+    }
   };
 
-  // ── API ───────────────────────────────────────────────────
-
+  // ── API ────────────────────────────────────────────────
   const sendChat = async (regenerateStyle = null) => {
     const resp = await fetch(`${API_BASE}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ conversation, regenerate_style: regenerateStyle }),
     });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) { const text = await resp.text(); throw new Error(`HTTP ${resp.status}: ${text}`); }
     return resp.json();
   };
 
-  // ── Render ────────────────────────────────────────────────
-
+  // ── Render plan ────────────────────────────────────────
   const renderPlan = (plan) => {
     currentPlan = plan;
+    renderSummary(plan);
     renderItinerary(plan.itinerary);
     renderBudget(plan.budgetSummary, plan.warnings || []);
-    renderMap(plan.mapData);
-    heroEl.classList.add("hidden");
-    loadingEl.classList.add("hidden");
+    renderHotel(plan.hotel);
+
+    // FIX: show result BEFORE initializing map so container has real dimensions
+    chatSectionEl.classList.add("compact");
     resultEl.classList.remove("hidden");
+    topbarHintEl.textContent = "Nhấn marker hoặc địa điểm để xem chi tiết";
+
+    // Scroll to result first
+    setTimeout(() => resultEl.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+
+    // Initialize map after container is visible + layout has painted
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        renderMap(plan.mapData);
+      });
+    });
+  };
+
+  const renderSummary = (plan) => {
+    const it = plan.intent || {};
+    $("summary-dest").textContent = it.destination || "—";
+    const meta = [];
+    if (it.duration) meta.push(it.duration);
+    if (it.people) meta.push(`${it.people} người`);
+    if (it.budget) meta.push(`Ngân sách ${fmt(it.budget)}`);
+    $("summary-meta").textContent = meta.join(" · ");
+    const chips = $("summary-chips");
+    chips.innerHTML = "";
+    (it.preferences || []).forEach((p) => {
+      const c = document.createElement("span");
+      c.className = "summary-chip";
+      c.textContent = "#" + p;
+      chips.appendChild(c);
+    });
   };
 
   const renderItinerary = (itinerary) => {
-    const el = document.getElementById("itinerary-content");
+    const el = $("itinerary-content");
     el.innerHTML = "";
-    for (const day of itinerary) {
+    itinerary.forEach((day, dayIdx) => {
       const block = document.createElement("div");
       block.className = "day-block";
-      block.innerHTML = `<div class="day-title">📅 Ngày ${day.day} — ${day.title || ""}</div>`;
-      for (const item of day.items || []) {
+      const dayColor = (currentPlan.mapData.days[dayIdx] || {}).color || "#3b82f6";
+      block.innerHTML = `<div class="day-title" style="border-left-color:${dayColor}">📅 Ngày ${day.day} — ${day.title || ""}</div>`;
+      (day.items || []).forEach((item, itemIdx) => {
         const card = document.createElement("div");
         card.className = "place-card";
+        card.dataset.dayIdx = dayIdx;
+        card.dataset.itemIdx = itemIdx;
+
+        const photoHtml = item.photoUrl
+          ? `<img class="place-img" loading="lazy" src="${item.photoUrl}" alt="${escapeHtml(item.name)}" onerror="this.parentNode.innerHTML='<div class=place-img-fallback>${TYPE_ICON[item.type] || "📍"}</div>'" />`
+          : `<div class="place-img-fallback">${TYPE_ICON[item.type] || "📍"}</div>`;
+
+        const costBadge = item.estimatedCost != null ? `<span class="badge badge--cost">${fmt(item.estimatedCost)}/người</span>` : "";
+        const ratingBadge = item.rating ? `<span class="badge badge--rating">⭐ ${item.rating}</span>` : "";
+        const travelBadge = item.travelTimeFromPrevious && itemIdx > 0 ? `<span class="badge badge--travel">🚗 ${item.travelTimeFromPrevious}</span>` : "";
+        const durationBadge = item.estimatedDuration ? `<span class="badge badge--duration">⏱ ${item.estimatedDuration}p</span>` : "";
+
         card.innerHTML = `
-          <img class="place-img" src="${item.photoUrl || ''}" alt="${item.name}" onerror="this.style.display='none'">
+          <div class="place-img-wrap">${photoHtml}</div>
           <div class="place-info">
-            <div class="place-time">${item.time || ''} · ${item.type || ''}</div>
-            <div class="place-name">${item.name}</div>
-            <div class="place-meta">
-              ${item.rating ? `<span class="badge badge--rating">⭐ ${item.rating}</span>` : ''}
-              ${item.estimatedCost != null ? `<span class="badge badge--cost">${fmt(item.estimatedCost)}/người</span>` : ''}
-              ${item.travelTimeFromPrevious ? `<span class="badge badge--travel">🚗 ${item.travelTimeFromPrevious}</span>` : ''}
+            <div class="place-time">
+              <span class="place-time__dot" style="background:${dayColor}"></span>
+              ${item.time || ""} · ${TYPE_LABEL[item.type] || item.type || ""}
             </div>
-            ${item.reason ? `<div class="place-reason">${item.reason}</div>` : ''}
+            <div class="place-name">${escapeHtml(item.name || "")}</div>
+            <div class="place-meta">${ratingBadge}${costBadge}${travelBadge}${durationBadge}</div>
+            ${item.reason ? `<div class="place-reason">${escapeHtml(item.reason)}</div>` : ""}
           </div>`;
+
+        card.addEventListener("click", () => openDetailPanel(item, dayIdx, itemIdx));
         block.appendChild(card);
-      }
+      });
       el.appendChild(block);
-    }
+    });
   };
 
   const renderBudget = (budget, warnings) => {
-    const el = document.getElementById("budget-content");
     const rows = [
-      ["🏨 Khách sạn", budget.hotel],
-      ["🍜 Ăn uống", budget.food],
-      ["☕ Cafe", budget.cafe],
-      ["🎫 Vé tham quan", budget.tickets],
-      ["🚗 Di chuyển", budget.transport],
-      ["🛡 Dự phòng (10%)", budget.backup],
+      ["🏨", "Khách sạn", budget.hotel],
+      ["🍜", "Ăn uống", budget.food],
+      ["☕", "Cafe", budget.cafe],
+      ["🎫", "Vé tham quan", budget.tickets],
+      ["🚗", "Di chuyển", budget.transport],
+      ["🛡", "Dự phòng (10%)", budget.backup],
     ];
-    el.innerHTML = rows.map(([label, val]) =>
-      `<div class="budget-row"><span>${label}</span><span>${fmt(val)}</span></div>`
+    $("budget-content").innerHTML = rows.map(([icon, label, val]) =>
+      `<div class="budget-row"><span class="budget-row__label">${icon} ${label}</span><span>${fmt(val)}</span></div>`
     ).join("") +
-    `<div class="budget-row">
-      <span><strong>Tổng</strong></span>
-      <span class="budget-total ${budget.withinBudget ? 'budget-ok' : 'budget-over'}">${fmt(budget.total)}</span>
-    </div>` +
+    `<div class="budget-row"><span class="budget-row__label"><strong>Tổng</strong></span><span class="budget-total ${budget.withinBudget ? "budget-ok" : "budget-over"}">${fmt(budget.total)}</span></div>` +
     (budget.withinBudget
-      ? `<div style="color:var(--success);font-size:.85rem;margin-top:.5rem">✅ Trong ngân sách</div>`
-      : `<div style="color:var(--danger);font-size:.85rem;margin-top:.5rem">⚠️ Vượt ${fmt(budget.budgetGap)}</div>`) +
-    warnings.map(w => `<div class="warning-item">⚠️ ${w}</div>`).join("");
+      ? `<div class="budget-status budget-status--ok">✅ Trong ngân sách</div>`
+      : `<div class="budget-status budget-status--over">⚠️ Vượt ${fmt(budget.budgetGap)}</div>`) +
+    warnings.map(w => `<div class="warning-item">⚠️ ${escapeHtml(w)}</div>`).join("");
   };
 
+  const renderHotel = (hotel) => {
+    const panel = $("hotel-panel");
+    if (!hotel || !hotel.name) { panel.classList.add("hidden"); return; }
+    panel.classList.remove("hidden");
+    const photo = hotel.photoUrl
+      ? `<img src="${hotel.photoUrl}" alt="${escapeHtml(hotel.name)}" onerror="this.style.display='none'" />`
+      : `<div style="background:var(--surface-3);width:64px;height:64px;border-radius:6px;display:grid;place-items:center;font-size:1.5rem;">🏨</div>`;
+    $("hotel-content").innerHTML = `
+      <div class="hotel-card">
+        ${photo}
+        <div>
+          <div class="hotel-card__name">${escapeHtml(hotel.name)}</div>
+          <div class="hotel-card__rating">${hotel.rating ? "⭐ " + hotel.rating : ""}${hotel.reviewCount ? " · " + hotel.reviewCount + " reviews" : ""}</div>
+          <div class="hotel-card__price">${hotel.priceLevel || ""}</div>
+        </div>
+      </div>`;
+  };
+
+  // ── Map ────────────────────────────────────────────────
   const renderMap = (mapData) => {
-    if (!mapboxgl.accessToken) return;
+    if (!mapboxgl.accessToken) {
+      $("map").innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">⚠️ Mapbox token chưa được cấu hình.</div>';
+      return;
+    }
+
     if (!map) {
       map = new mapboxgl.Map({
         container: "map",
         style: "mapbox://styles/mapbox/dark-v11",
         zoom: 11,
+        center: [108.4, 11.9],
       });
+      map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
+      // Ensure map fills container after layout finishes
+      map.on("load", () => { map.resize(); });
+    } else {
+      // Resize in case container changed size
+      map.resize();
     }
 
     const doRender = () => {
-      // Remove previously rendered layers/sources
+      // Remove old layers + markers
       renderedLayerIds.forEach(sid => {
-        if (map.getLayer(sid)) map.removeLayer(sid);
-        if (map.getSource(sid)) map.removeSource(sid);
+        try { if (map.getLayer(sid)) map.removeLayer(sid); } catch (_) {}
+        try { if (map.getSource(sid)) map.removeSource(sid); } catch (_) {}
       });
       renderedLayerIds = [];
+      markersByDay.flat().forEach(m => m.remove());
+      markersByDay.length = 0;
+      if (activeMarkerEl) { activeMarkerEl.classList.remove("active-marker"); activeMarkerEl = null; }
 
-      // Remove old markers
-      document.querySelectorAll(".travel-marker").forEach(el => el.remove());
-
+      const legend = $("map-legend");
+      legend.innerHTML = "";
       const bounds = new mapboxgl.LngLatBounds();
+      let hasValidBounds = false;
 
       (mapData.days || []).forEach((day, i) => {
         const color = day.color || "#38bdf8";
 
-        // Draw route polyline (polyline6 encoded)
+        // Legend
+        const row = document.createElement("div");
+        row.className = "map-legend__row";
+        row.innerHTML = `<span class="map-legend__dot" style="background:${color}"></span>Ngày ${day.day}`;
+        legend.appendChild(row);
+
+        // Route polyline
         if (day.routePolyline) {
-          const coords = decodePolyline(day.routePolyline, 6).map(([lat, lng]) => [lng, lat]);
-          const sid = `route-${i}`;
-          map.addSource(sid, {
-            type: "geojson",
-            data: { type: "Feature", geometry: { type: "LineString", coordinates: coords } }
-          });
-          map.addLayer({
-            id: sid, type: "line", source: sid,
-            paint: { "line-color": color, "line-width": 3, "line-opacity": 0.8 }
-          });
-          renderedLayerIds.push(sid);
+          try {
+            const coords = decodePolyline(day.routePolyline, 6);
+            if (coords.length >= 2) {
+              const sid = `route-${i}`;
+              map.addSource(sid, { type: "geojson", data: { type: "Feature", geometry: { type: "LineString", coordinates: coords } } });
+              map.addLayer({
+                id: sid, type: "line", source: sid,
+                paint: { "line-color": color, "line-width": 3.5, "line-opacity": 0.8 }
+              });
+              renderedLayerIds.push(sid);
+            }
+          } catch (e) { console.warn("Route decode error", e); }
         }
 
-        // Add markers
+        const dayMarkers = [];
         (day.markers || []).forEach((m, j) => {
-          if (!m.lat || !m.lng) return;
+          if (m.lat == null || m.lng == null || m.lat === 0 || m.lng === 0) return;
           const lngLat = [m.lng, m.lat];
           bounds.extend(lngLat);
+          hasValidBounds = true;
 
+          // Marker element
           const el = document.createElement("div");
           el.className = "travel-marker";
-          el.style.cssText = `width:28px;height:28px;border-radius:50%;background:${color};border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;cursor:pointer;`;
-          el.textContent = j + 1;
+          el.style.background = color;
+          el.textContent = (i + 1) + "." + (j + 1);
+          el.setAttribute("aria-label", m.name || "");
 
-          const popup = new mapboxgl.Popup({ offset: 12 }).setHTML(`
-            <div style="max-width:180px">
-              ${m.photoUrl ? `<img src="${m.photoUrl}" style="width:100%;height:90px;object-fit:cover;border-radius:6px;margin-bottom:4px" onerror="this.style.display='none'">` : ''}
-              <strong>${m.name}</strong><br>
-              ${m.rating ? `⭐ ${m.rating}` : ''} ${m.cost ? `· ${m.cost.toLocaleString('vi-VN')}₫` : ''}
-            </div>`);
+          const marker = new mapboxgl.Marker({ element: el })
+            .setLngLat(lngLat)
+            .addTo(map);
 
-          new mapboxgl.Marker({ element: el }).setLngLat(lngLat).setPopup(popup).addTo(map);
+          // Hover popup (decoupled from click)
+          const popupHTML = `
+            <div class="popup-card">
+              ${m.photoUrl ? `<img src="${m.photoUrl}" alt="${escapeHtml(m.name)}" onerror="this.style.display='none'" />` : ""}
+              <div class="popup-card__body">
+                <div class="popup-card__name">${escapeHtml(m.name || "")}</div>
+                <div class="popup-card__meta">${m.time ? m.time + " · " : ""}${TYPE_LABEL[m.type] || m.type || ""}${m.rating ? " · ⭐ " + m.rating : ""}</div>
+                <div class="popup-card__cta">Nhấn để xem chi tiết →</div>
+              </div>
+            </div>`;
+
+          const hoverPopup = new mapboxgl.Popup({ offset: 14, maxWidth: "230px", closeButton: false, closeOnClick: false });
+
+          el.addEventListener("mouseenter", () => {
+            if (!hoverPopup.isOpen()) {
+              hoverPopup.setLngLat(lngLat).setHTML(popupHTML).addTo(map);
+            }
+          });
+          el.addEventListener("mouseleave", () => {
+            hoverPopup.remove();
+          });
+
+          // Click: open detail panel (no popup conflict)
+          el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            hoverPopup.remove();
+            setActiveMarker(el);
+            const allItems = (currentPlan?.itinerary[i] || {}).items || [];
+            if (allItems[j]) openDetailPanel(allItems[j], i, j);
+          });
+
+          dayMarkers.push(marker);
         });
+        markersByDay.push(dayMarkers);
       });
 
-      if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+      if (hasValidBounds) {
+        map.fitBounds(bounds, { padding: { top: 60, bottom: 60, left: 60, right: 60 }, maxZoom: 14, duration: 900 });
+      }
     };
 
-    if (map.loaded()) doRender();
-    else map.on("load", doRender);
+    if (map.loaded()) {
+      doRender();
+    } else {
+      map.once("load", doRender);
+    }
   };
 
-  // ── Event handlers ────────────────────────────────────────
+  const setActiveMarker = (el) => {
+    if (activeMarkerEl) activeMarkerEl.classList.remove("active-marker");
+    activeMarkerEl = el;
+    if (el) el.classList.add("active-marker");
+  };
 
+  // ── Detail panel ───────────────────────────────────────
+  const detailPanelEl = $("place-detail-panel");
+  const planContentEl = $("plan-content");
+  let detailGallery = [];
+  let detailGalleryIdx = 0;
+  let currentDetailItem = null;
+
+  const openDetailPanel = (item, dayIdx, itemIdx) => {
+    if (!item) return;
+    currentDetailItem = { item, dayIdx, itemIdx };
+
+    detailGallery = (item.photoUrls?.length) ? item.photoUrls : (item.photoUrl ? [item.photoUrl] : []);
+    detailGalleryIdx = 0;
+    renderDetailGallery();
+
+    $("detail-type").textContent = TYPE_LABEL[item.type] || item.type || "Địa điểm";
+    $("detail-title").textContent = item.name || "—";
+    $("detail-reason").textContent = item.reason || "";
+    $("detail-reason").style.display = item.reason ? "" : "none";
+
+    const dayColor = currentPlan?.mapData?.days?.[dayIdx]?.color || "#38bdf8";
+    const dayBadge = $("detail-day-badge");
+    dayBadge.textContent = `Ngày ${dayIdx + 1}`;
+    dayBadge.style.cssText += `;border-color:${dayColor};color:${dayColor}`;
+
+    const badges = [];
+    if (item.rating) badges.push(`<span class="badge badge--rating">⭐ ${item.rating}</span>`);
+    if (item.estimatedCost != null) badges.push(`<span class="badge badge--cost">${fmt(item.estimatedCost)}/người</span>`);
+    if (item.estimatedDuration) badges.push(`<span class="badge badge--duration">⏱ ${item.estimatedDuration} phút</span>`);
+    if (item.time) badges.push(`<span class="badge badge--travel">🕒 ${item.time}</span>`);
+    $("detail-badges").innerHTML = badges.join("");
+
+    const meta = [];
+    if (item.travelTimeFromPrevious && itemIdx > 0) meta.push(["🚗 Di chuyển", item.travelTimeFromPrevious]);
+    if (item.type) meta.push(["📂 Loại", TYPE_LABEL[item.type] || item.type]);
+    if (item.estimatedCost != null) meta.push(["💰 Chi phí", fmt(item.estimatedCost) + "/người"]);
+    if (item.estimatedDuration) meta.push(["⏳ Thời gian", item.estimatedDuration + " phút"]);
+    $("detail-meta").innerHTML = meta.map(([l, v]) => `
+      <div class="detail-meta__row">
+        <span class="detail-meta__label">${l}</span>
+        <span class="detail-meta__val">${v}</span>
+      </div>`).join("");
+
+    const addr = $("detail-address");
+    addr.textContent = item.address || "";
+    addr.style.display = item.address ? "" : "none";
+
+    const directionsEl = $("detail-directions");
+    if (item.lat && item.lng) {
+      directionsEl.href = `https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lng}`;
+      directionsEl.style.display = "";
+    } else {
+      directionsEl.style.display = "none";
+    }
+
+    // Highlight matching itinerary card
+    document.querySelectorAll(".place-card").forEach(c => c.classList.remove("active"));
+    const matchCard = document.querySelector(`.place-card[data-day-idx="${dayIdx}"][data-item-idx="${itemIdx}"]`);
+    if (matchCard) {
+      matchCard.classList.add("active");
+      matchCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    // Fly to on map
+    if (map && item.lat && item.lng) {
+      map.flyTo({ center: [item.lng, item.lat], zoom: 15, duration: 900 });
+    }
+
+    // Show panel
+    planContentEl.classList.add("hidden");
+    detailPanelEl.classList.remove("hidden");
+    detailPanelEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+
+  const closeDetailPanel = () => {
+    detailPanelEl.classList.add("hidden");
+    planContentEl.classList.remove("hidden");
+    document.querySelectorAll(".place-card").forEach(c => c.classList.remove("active"));
+    if (activeMarkerEl) { activeMarkerEl.classList.remove("active-marker"); activeMarkerEl = null; }
+    currentDetailItem = null;
+  };
+
+  const renderDetailGallery = () => {
+    const img = $("detail-main-img");
+    const thumbs = $("detail-thumbs");
+    const nav = document.querySelectorAll(".detail-nav");
+    if (!detailGallery.length) {
+      img.style.display = "none";
+      thumbs.innerHTML = "";
+      nav.forEach(n => n.style.display = "none");
+      return;
+    }
+    img.style.display = "";
+    img.src = detailGallery[detailGalleryIdx];
+    img.onerror = () => { img.style.display = "none"; };
+    nav.forEach(n => n.style.display = detailGallery.length > 1 ? "" : "none");
+    thumbs.innerHTML = detailGallery.map((src, i) =>
+      `<img class="detail-thumb ${i === detailGalleryIdx ? "active" : ""}" data-idx="${i}" src="${src}" alt="thumb ${i + 1}" onerror="this.style.display='none'" />`
+    ).join("");
+    thumbs.querySelectorAll(".detail-thumb").forEach(t => {
+      t.addEventListener("click", () => {
+        detailGalleryIdx = parseInt(t.dataset.idx, 10);
+        renderDetailGallery();
+      });
+    });
+  };
+
+  $("detail-back-btn").addEventListener("click", closeDetailPanel);
+  $("detail-prev").addEventListener("click", () => {
+    if (!detailGallery.length) return;
+    detailGalleryIdx = (detailGalleryIdx - 1 + detailGallery.length) % detailGallery.length;
+    renderDetailGallery();
+  });
+  $("detail-next").addEventListener("click", () => {
+    if (!detailGallery.length) return;
+    detailGalleryIdx = (detailGalleryIdx + 1) % detailGallery.length;
+    renderDetailGallery();
+  });
+  $("detail-flyto").addEventListener("click", () => {
+    if (!currentDetailItem || !map) return;
+    const { item } = currentDetailItem;
+    if (item.lat && item.lng) map.flyTo({ center: [item.lng, item.lat], zoom: 16, duration: 1000 });
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (!detailPanelEl.classList.contains("hidden")) {
+      if (e.key === "Escape") closeDetailPanel();
+      if (e.key === "ArrowLeft") $("detail-prev").click();
+      if (e.key === "ArrowRight") $("detail-next").click();
+    }
+  });
+
+  // ── Resize map when window changes ────────────────────
+  window.addEventListener("resize", () => { if (map) map.resize(); });
+
+  // ── Event handlers ─────────────────────────────────────
+  let isSending = false;
   const handleSend = async () => {
+    if (isSending) return;
     const text = userInputEl.value.trim();
     if (!text) return;
-    sendBtn.disabled = true;
+    isSending = true;
     addMessage("user", text);
     userInputEl.value = "";
     setLoading(true);
 
     try {
       const res = await sendChat();
+      setLoading(false);
       if (res.type === "clarification") {
-        setLoading(false);
         addMessage("assistant", res.clarification);
       } else {
         renderPlan(res.plan);
       }
     } catch (e) {
       setLoading(false);
-      addMessage("assistant", "Có lỗi xảy ra. Vui lòng thử lại.");
+      addMessage("assistant", "Có lỗi xảy ra: " + e.message);
     } finally {
-      sendBtn.disabled = false;
+      isSending = false;
     }
   };
 
   const handleAction = async (style) => {
-    if (!currentPlan) return;
+    if (!currentPlan || isSending) return;
+    isSending = true;
+    closeDetailPanel();
+    const labels = { cheaper: "Làm rẻ hơn", relaxed: "Nhẹ nhàng hơn", more_food: "Thêm địa điểm ăn uống" };
+    addMessage("user", labels[style] || "Tạo lại lịch trình");
     setLoading(true);
     try {
       const res = await sendChat(style);
-      if (res.type === "plan") renderPlan(res.plan);
-      else setLoading(false);
+      setLoading(false);
+      if (res.type === "plan") {
+        renderPlan(res.plan);
+      } else {
+        addMessage("assistant", res.clarification || "Không thể tạo lại lịch trình.");
+      }
     } catch (e) {
       setLoading(false);
-      addMessage("assistant", "Có lỗi khi thay đổi lịch trình. Vui lòng thử lại.");
+      addMessage("assistant", "Có lỗi khi thay đổi lịch trình: " + e.message);
+    } finally {
+      isSending = false;
     }
+  };
+
+  const startNewTrip = () => {
+    conversation = [];
+    currentPlan = null;
+    isSending = false;
+    messagesEl.innerHTML = "";
+    userInputEl.value = "";
+    chatSectionEl.classList.remove("compact");
+    resultEl.classList.add("hidden");
+    closeDetailPanel();
+    topbarHintEl.textContent = "Mô tả chuyến đi của bạn để bắt đầu";
+    markersByDay.flat().forEach(m => m.remove());
+    markersByDay.length = 0;
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   sendBtn.addEventListener("click", handleSend);
   userInputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   });
-
-  document.getElementById("regenerate-btn").addEventListener("click", () => handleAction(null));
+  $("regenerate-btn").addEventListener("click", () => handleAction(null));
   document.querySelectorAll(".action-btn[data-style]").forEach(btn => {
     btn.addEventListener("click", () => handleAction(btn.dataset.style));
+  });
+  $("new-trip-btn").addEventListener("click", startNewTrip);
+  document.querySelectorAll(".chip").forEach(c => {
+    c.addEventListener("click", () => { userInputEl.value = c.dataset.prompt; userInputEl.focus(); });
   });
 })();

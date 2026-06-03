@@ -33,6 +33,15 @@ Mỗi item cần có:
 - photoUrl: để ""
 - rating: điểm đánh giá (0-5)
 
+Quan trọng:
+- placeId PHẢI copy nguyên xi từ trường "placeId" trong "available_places", "available_hotels" hoặc "available_restaurants". KHÔNG bịa, KHÔNG sửa.
+- Nếu không có địa điểm phù hợp trong danh sách, để placeId = null và điền lat/lng/name/rating/photoUrl tốt nhất có thể.
+- Ưu tiên sử dụng địa điểm từ danh sách available (có ảnh thật và tọa độ chính xác).
+- Mỗi ngày có 4-6 điểm: 1 cafe sáng, 1-2 attraction, 1 restaurant trưa, 1 attraction/checkin, 1 restaurant tối.
+- estimatedCost VND/người: cafe 60-100k, restaurant 80-200k, attraction free-200k, hotel 0.
+- estimatedDuration (phút): cafe 60-90, attraction 60-120, restaurant 60-75, hotel checkin 20-30.
+- lat/lng: dùng tọa độ chính xác từ available_places nếu có, không bịa tọa độ.
+
 Trả về JSON duy nhất:
 {
   "itinerary": [

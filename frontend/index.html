@@ -3,69 +3,141 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Travel Planner</title>
+  <title>AI Travel Planner Agent</title>
   <link rel="stylesheet" href="style.css" />
-  <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
 </head>
 <body>
 
-  <!-- ── Hero ───────────────────────────────────────────── -->
-  <section id="hero">
-    <div class="hero__inner">
-      <h1><span aria-hidden="true">✈</span> AI Travel Planner</h1>
-      <p class="hero__sub">Mô tả chuyến đi của bạn, AI sẽ lên lịch trình hoàn chỉnh.</p>
+  <!-- ── Top bar ────────────────────────────────────────── -->
+  <header id="topbar">
+    <div class="topbar__brand">
+      <span class="logo">✈</span>
+      <span>AI Travel Planner</span>
+    </div>
+    <div class="topbar__hint" id="topbar-hint">Mô tả chuyến đi của bạn để bắt đầu</div>
+  </header>
 
+  <!-- ── Chat (always visible) ──────────────────────────── -->
+  <section id="chat-section">
+    <div id="chat-wrapper">
+      <div class="chat-header" id="chat-header-hero">
+        <h1>Lên kế hoạch du lịch <span class="grad">trong vài giây</span></h1>
+        <p class="hero__sub">Mô tả nhu cầu bằng tiếng Việt — AI sẽ gợi ý lịch trình, khách sạn, ngân sách và bản đồ tương tác.</p>
+      </div>
       <div id="chat-area">
         <div id="messages"></div>
+        <!-- Inline loading inside chat -->
+        <div id="inline-loading" class="hidden">
+          <div class="inline-loading__inner">
+            <div class="inline-spinner"></div>
+            <span id="inline-loading-text">Đang xử lý…</span>
+          </div>
+        </div>
         <div class="input-row">
-          <textarea id="user-input" rows="3" aria-label="Mô tả chuyến đi của bạn"
-            placeholder="Tôi muốn đi Đà Lạt 3 ngày 2 đêm, ngân sách 5 triệu, đi 2 người, thích cafe và thiên nhiên…"></textarea>
-          <button id="send-btn">Gửi ✈</button>
+          <textarea id="user-input" rows="2" aria-label="Mô tả chuyến đi của bạn"
+            placeholder="Ví dụ: Tôi muốn đi Đà Lạt 3 ngày 2 đêm, ngân sách 5 triệu, đi 2 người, thích cafe, thiên nhiên và ít đi bộ."></textarea>
+          <button id="send-btn">
+            <span class="send-label">Gửi</span>
+            <span class="send-icon" aria-hidden="true">✈</span>
+          </button>
+        </div>
+        <div class="quick-prompts" id="quick-prompts">
+          <button class="chip" data-prompt="Tôi muốn đi Đà Lạt 3 ngày 2 đêm, ngân sách 5 triệu, 2 người, thích cafe và thiên nhiên, ít đi bộ.">Đà Lạt 3N2Đ</button>
+          <button class="chip" data-prompt="Phú Quốc 4 ngày 3 đêm, 2 người, ngân sách 15 triệu, thích biển và hải sản.">Phú Quốc 4N3Đ</button>
+          <button class="chip" data-prompt="Sapa 2 ngày 1 đêm, 4 người, ngân sách 6 triệu, thích ruộng bậc thang và văn hóa.">Sapa 2N1Đ</button>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ── Loading ────────────────────────────────────────── -->
-  <div id="loading" class="hidden">
-    <div class="spinner"></div>
-    <p>Đang lên lịch trình…</p>
-  </div>
-
-  <!-- ── Result ─────────────────────────────────────────── -->
+  <!-- ── Result ──────────────────────────────────────────── -->
   <main id="result" class="hidden">
 
-    <!-- Action buttons -->
+    <!-- Summary header -->
+    <section id="summary">
+      <div class="summary__dest">
+        <h2 id="summary-dest">—</h2>
+        <div class="summary__meta" id="summary-meta"></div>
+      </div>
+      <div class="summary__chips" id="summary-chips"></div>
+    </section>
+
+    <!-- Action bar -->
     <div id="action-bar">
       <button class="action-btn" data-style="cheaper"><span aria-hidden="true">💰</span> Rẻ hơn</button>
       <button class="action-btn" data-style="relaxed"><span aria-hidden="true">🌿</span> Nhẹ nhàng hơn</button>
       <button class="action-btn" data-style="more_food"><span aria-hidden="true">🍜</span> Thêm ăn uống</button>
       <button id="regenerate-btn" class="action-btn action-btn--primary"><span aria-hidden="true">🔄</span> Tạo lại</button>
+      <button id="new-trip-btn" class="action-btn action-btn--ghost"><span aria-hidden="true">＋</span> Chuyến mới</button>
     </div>
 
-    <div id="result-grid">
+    <!-- Main 2-column layout: Map | Plan -->
+    <div id="result-main">
 
-      <!-- Itinerary -->
-      <section id="itinerary-panel">
-        <h2>Lịch trình</h2>
-        <div id="itinerary-content"></div>
-      </section>
+      <!-- Left: Map -->
+      <div id="map-col">
+        <div id="map-section">
+          <div id="map"></div>
+          <div id="map-legend" class="map-legend"></div>
+        </div>
+      </div>
 
-      <!-- Right column: Map + Budget -->
-      <aside id="sidebar">
-        <div id="map"></div>
-        <section id="budget-panel">
-          <h2>Ngân sách dự kiến</h2>
-          <div id="budget-content"></div>
-        </section>
-      </aside>
+      <!-- Right: Plan column -->
+      <div id="plan-col">
 
+        <!-- Place detail panel (shown on marker click) -->
+        <div id="place-detail-panel" class="hidden">
+          <div class="detail-panel__header">
+            <button id="detail-back-btn" class="detail-back-btn" aria-label="Quay lại lịch trình">
+              ← Lịch trình
+            </button>
+            <span class="detail-panel__day-badge" id="detail-day-badge"></span>
+          </div>
+          <div class="detail-panel__gallery">
+            <img id="detail-main-img" alt="" />
+            <div class="detail-panel__thumbs" id="detail-thumbs"></div>
+            <button class="detail-nav detail-nav--prev" id="detail-prev" aria-label="Ảnh trước">‹</button>
+            <button class="detail-nav detail-nav--next" id="detail-next" aria-label="Ảnh sau">›</button>
+          </div>
+          <div class="detail-panel__body">
+            <div class="detail-panel__type" id="detail-type"></div>
+            <h3 id="detail-title">—</h3>
+            <div class="detail-panel__badges" id="detail-badges"></div>
+            <p class="detail-panel__reason" id="detail-reason"></p>
+            <div class="detail-panel__meta" id="detail-meta"></div>
+            <div class="detail-panel__address" id="detail-address"></div>
+            <div class="detail-panel__actions">
+              <a id="detail-directions" class="modal__btn modal__btn--primary" target="_blank" rel="noopener">🗺 Chỉ đường</a>
+              <button id="detail-flyto" class="modal__btn">📍 Zoom bản đồ</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Itinerary + sidebar (shown when no detail panel) -->
+        <div id="plan-content">
+          <section id="itinerary-panel">
+            <h2><span aria-hidden="true">📅</span> Lịch trình</h2>
+            <div id="itinerary-content"></div>
+          </section>
+
+          <aside id="sidebar">
+            <section id="budget-panel">
+              <h2><span aria-hidden="true">💼</span> Ngân sách dự kiến</h2>
+              <div id="budget-content"></div>
+            </section>
+            <section id="hotel-panel" class="hidden">
+              <h2><span aria-hidden="true">🏨</span> Khách sạn gợi ý</h2>
+              <div id="hotel-content"></div>
+            </section>
+          </aside>
+        </div>
+
+      </div>
     </div>
   </main>
 
-  <script>/* Mapbox token injected via ?mapbox=TOKEN query param */</script>
   <script src="app.js"></script>
 </body>
 </html>

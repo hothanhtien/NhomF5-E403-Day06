@@ -10,20 +10,34 @@ PLACES_BASE = "https://maps.googleapis.com/maps/api/place"
 _PHOTO_REF_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
+_TYPE_QUERY = {
+    "tourist_attraction": "địa điểm tham quan nổi tiếng",
+    "cafe": "quán cafe",
+    "restaurant": "nhà hàng quán ăn",
+    "lodging": "khách sạn homestay",
+}
+
+
 async def search_places(destination: str, place_type: str, preferences: list[str]) -> list[dict]:
     """
     place_type: "tourist_attraction" | "cafe" | "restaurant" | "lodging"
     Returns list of place dicts with basic info.
     """
-    parts = [p for p in [place_type, destination] + preferences if p]
+    type_phrase = _TYPE_QUERY.get(place_type, place_type)
+    pref_phrase = " ".join(preferences[:3]) if preferences else ""
+    parts = [type_phrase, destination]
+    if pref_phrase:
+        parts.append(pref_phrase)
     query = " ".join(parts)
-    async with httpx.AsyncClient(timeout=10.0) as client:
+
+    async with httpx.AsyncClient(timeout=12.0) as client:
         resp = await client.get(
             f"{PLACES_BASE}/textsearch/json",
             params={
                 "query": query,
                 "key": GOOGLE_API_KEY,
                 "language": "vi",
+                "type": place_type if place_type in ("cafe", "restaurant", "lodging") else "",
             },
         )
         resp.raise_for_status()
@@ -45,8 +59,11 @@ async def get_place_details(place_id: str) -> dict:
         )
         resp.raise_for_status()
         data = resp.json().get("result", {})
-        photo_ref = _extract_photo_ref(data.get("photos", []))
-        photo_url = f"/api/photo?ref={photo_ref}" if photo_ref else ""
+        photos = data.get("photos", []) or []
+        photo_refs = [p.get("photo_reference", "") for p in photos[:5]]
+        photo_refs = [r for r in photo_refs if r and _PHOTO_REF_RE.match(r)]
+        photo_urls = [f"/api/photo?ref={r}" for r in photo_refs]
+        photo_url = photo_urls[0] if photo_urls else ""
         location = data.get("geometry", {}).get("location", {})
         price_level = _map_price_level(data.get("price_level"))
         return {
@@ -58,9 +75,11 @@ async def get_place_details(place_id: str) -> dict:
             "reviewCount": data.get("user_ratings_total", 0),
             "address": data.get("formatted_address", ""),
             "photoUrl": photo_url,
-            "photoRef": photo_ref,
+            "photoUrls": photo_urls,
+            "photoRef": photo_refs[0] if photo_refs else "",
             "category": _primary_type(data.get("types", [])),
             "priceLevel": price_level,
+            "types": data.get("types", []),
         }
 
 
