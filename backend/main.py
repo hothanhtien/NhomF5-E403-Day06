@@ -1,7 +1,20 @@
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Query, HTTPException
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
+from database import engine, Base
+from routers import chat, plans
+from tools.places import fetch_photo_bytes
 
-app = FastAPI(title="Counter API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
+app = FastAPI(title="AI Travel Planner", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -10,27 +23,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-COUNTER = {"value": 0}
+app.include_router(chat.router, prefix="/api")
+app.include_router(plans.router, prefix="/api")
 
 
-@app.get("/api/count")
-def get_count():
-    return {"count": COUNTER["value"]}
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
 
 
-@app.post("/api/increment")
-def increment():
-    COUNTER["value"] += 1
-    return {"count": COUNTER["value"]}
+@app.get("/api/config")
+def get_config():
+    """Return public client-side config (Mapbox token is public-safe)."""
+    import os
+    return {"mapboxToken": os.environ.get("MAPBOX_ACCESS_TOKEN", "")}
 
 
-@app.post("/api/decrement")
-def decrement():
-    COUNTER["value"] -= 1
-    return {"count": COUNTER["value"]}
-
-
-@app.post("/api/reset")
-def reset():
-    COUNTER["value"] = 0
-    return {"count": COUNTER["value"]}
+@app.get("/api/photo")
+async def proxy_photo(ref: str = Query(..., description="Google Places photo_reference")):
+    """Proxy Google Places photo so the API key never leaves the server."""
+    try:
+        data = await fetch_photo_bytes(ref)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Photo fetch failed: {exc}")
+    return Response(content=data, media_type="image/jpeg")

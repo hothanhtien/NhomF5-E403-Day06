@@ -4,6 +4,7 @@ services:
   backend:
     build: ./backend
     container_name: counter-backend
+    env_file: .env
     expose:
       - "8000"            # internal only, nginx proxies đến đây
     networks:

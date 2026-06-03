@@ -1,19 +1,33 @@
-__pycache__/
-*.pyc
-.venv/
+# Secrets
 .env
-.env.local
-*.pem
-*.key
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
 dist/
 build/
-*.log
+.pytest_cache/
 
-# Cloudflare tunnel — credentials + config, never commit
-cloudflared/
+# Node
+node_modules/
+npm-debug.log*
 
+# Cloudflare credentials (never commit)
+cloudflared/*.json
+
+# Keys / certs
+*.pem
+*.key
+*.cert
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

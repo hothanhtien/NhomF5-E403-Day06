@@ -1,118 +1,259 @@
-// COUNTER.exe — frontend logic
 (() => {
-  // Same-origin: FE container proxies /api → api:8000 via docker network
+  // Inline polyline6 decoder (replaces @mapbox/polyline CDN which doesn't expose a global)
+  function decodePolyline(str, precision) {
+    const factor = Math.pow(10, precision || 5);
+    let index = 0, lat = 0, lng = 0;
+    const coords = [];
+    while (index < str.length) {
+      let b, shift = 0, result = 0;
+      do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+      shift = 0; result = 0;
+      do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+      coords.push([lat / factor, lng / factor]);
+    }
+    return coords;
+  }
+
   const API_BASE = "";
 
-  const $ = (id) => document.getElementById(id);
+  // Load Mapbox token from backend config (fallback: ?mapbox= query param)
+  const params = new URLSearchParams(location.search);
+  const tokenFromUrl = params.get("mapbox") || "";
+  if (tokenFromUrl) {
+    mapboxgl.accessToken = tokenFromUrl;
+  } else {
+    fetch(`${API_BASE}/api/config`)
+      .then(r => r.json())
+      .then(cfg => { if (cfg.mapboxToken) mapboxgl.accessToken = cfg.mapboxToken; })
+      .catch(() => {});
+  }
 
-  const counter   = $("counter");
-  const numEl     = $("num");
-  const incBtn    = $("inc");
-  const decBtn    = $("dec");
-  const resetBtn  = $("reset");
-  const log       = $("log");
-  const clock     = $("clock");
+  // State
+  let conversation = [];
+  let currentPlan = null;
+  let map = null;
+  let renderedLayerIds = [];
 
-  let current = 0;
-  let isLocked = false;
+  // DOM refs
+  const messagesEl = document.getElementById("messages");
+  const userInputEl = document.getElementById("user-input");
+  const sendBtn = document.getElementById("send-btn");
+  const loadingEl = document.getElementById("loading");
+  const resultEl = document.getElementById("result");
+  const heroEl = document.getElementById("hero");
 
-  // ---------- API ----------
-  const api = {
-    async get()    { return (await fetch(`${API_BASE}/api/count`)).json(); },
-    async post(p)  { return (await fetch(`${API_BASE}${p}`, { method: "POST" })).json(); },
+  // ── Helpers ──────────────────────────────────────────────
+
+  const fmt = (n) => n ? n.toLocaleString("vi-VN") + " ₫" : "Miễn phí";
+
+  const addMessage = (role, content) => {
+    conversation.push({ role, content });
+    const el = document.createElement("div");
+    el.className = `msg msg--${role}`;
+    el.textContent = content;
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   };
 
-  // ---------- Render ----------
-  const pad = (n) => {
-    // Always show 3+ digits, with sign for negatives
-    const s = String(n);
-    return s.startsWith("-") ? "-" + String(Math.abs(n)).padStart(3, "0") : s.padStart(3, "0");
+  const setLoading = (on) => {
+    loadingEl.classList.toggle("hidden", !on);
+    heroEl.classList.toggle("hidden", on);
+    resultEl.classList.add("hidden");
   };
 
-  const render = (n, mode = "idle") => {
-    current = n;
-    numEl.textContent = pad(n);
-    counter.dataset.value = String(n);
+  // ── API ───────────────────────────────────────────────────
 
-    counter.classList.remove("is-bump", "is-minus", "is-reset");
-    void counter.offsetWidth; // restart animation
-    if (mode === "up")   counter.classList.add("is-bump");
-    if (mode === "down") counter.classList.add("is-minus", "is-bump");
-    if (mode === "reset")counter.classList.add("is-reset");
+  const sendChat = async (regenerateStyle = null) => {
+    const resp = await fetch(`${API_BASE}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation, regenerate_style: regenerateStyle }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
   };
 
-  // ---------- Log feed ----------
-  const logEvent = (msg, kind = "up") => {
-    const el = document.createElement("span");
-    el.className = `log__item log__item--${kind}`;
-    const t = new Date().toTimeString().slice(0, 8);
-    el.textContent = `[${t}] ${msg}`;
-    log.prepend(el);
-    // keep at most 5 entries
-    while (log.children.length > 5) log.lastChild.remove();
+  // ── Render ────────────────────────────────────────────────
+
+  const renderPlan = (plan) => {
+    currentPlan = plan;
+    renderItinerary(plan.itinerary);
+    renderBudget(plan.budgetSummary, plan.warnings || []);
+    renderMap(plan.mapData);
+    heroEl.classList.add("hidden");
+    loadingEl.classList.add("hidden");
+    resultEl.classList.remove("hidden");
   };
 
-  // ---------- Actions ----------
-  const safe = async (fn) => {
-    if (isLocked) return;
-    isLocked = true;
-    try { await fn(); }
-    finally { setTimeout(() => (isLocked = false), 120); }
+  const renderItinerary = (itinerary) => {
+    const el = document.getElementById("itinerary-content");
+    el.innerHTML = "";
+    for (const day of itinerary) {
+      const block = document.createElement("div");
+      block.className = "day-block";
+      block.innerHTML = `<div class="day-title">📅 Ngày ${day.day} — ${day.title || ""}</div>`;
+      for (const item of day.items || []) {
+        const card = document.createElement("div");
+        card.className = "place-card";
+        card.innerHTML = `
+          <img class="place-img" src="${item.photoUrl || ''}" alt="${item.name}" onerror="this.style.display='none'">
+          <div class="place-info">
+            <div class="place-time">${item.time || ''} · ${item.type || ''}</div>
+            <div class="place-name">${item.name}</div>
+            <div class="place-meta">
+              ${item.rating ? `<span class="badge badge--rating">⭐ ${item.rating}</span>` : ''}
+              ${item.estimatedCost != null ? `<span class="badge badge--cost">${fmt(item.estimatedCost)}/người</span>` : ''}
+              ${item.travelTimeFromPrevious ? `<span class="badge badge--travel">🚗 ${item.travelTimeFromPrevious}</span>` : ''}
+            </div>
+            ${item.reason ? `<div class="place-reason">${item.reason}</div>` : ''}
+          </div>`;
+        block.appendChild(card);
+      }
+      el.appendChild(block);
+    }
   };
 
-  const inc = () => safe(async () => {
-    const { count } = await api.post("/api/increment");
-    render(count, "up");
-    logEvent(`+1 → ${pad(count)}`, "up");
-    ripple(incBtn);
+  const renderBudget = (budget, warnings) => {
+    const el = document.getElementById("budget-content");
+    const rows = [
+      ["🏨 Khách sạn", budget.hotel],
+      ["🍜 Ăn uống", budget.food],
+      ["☕ Cafe", budget.cafe],
+      ["🎫 Vé tham quan", budget.tickets],
+      ["🚗 Di chuyển", budget.transport],
+      ["🛡 Dự phòng (10%)", budget.backup],
+    ];
+    el.innerHTML = rows.map(([label, val]) =>
+      `<div class="budget-row"><span>${label}</span><span>${fmt(val)}</span></div>`
+    ).join("") +
+    `<div class="budget-row">
+      <span><strong>Tổng</strong></span>
+      <span class="budget-total ${budget.withinBudget ? 'budget-ok' : 'budget-over'}">${fmt(budget.total)}</span>
+    </div>` +
+    (budget.withinBudget
+      ? `<div style="color:var(--success);font-size:.85rem;margin-top:.5rem">✅ Trong ngân sách</div>`
+      : `<div style="color:var(--danger);font-size:.85rem;margin-top:.5rem">⚠️ Vượt ${fmt(budget.budgetGap)}</div>`) +
+    warnings.map(w => `<div class="warning-item">⚠️ ${w}</div>`).join("");
+  };
+
+  const renderMap = (mapData) => {
+    if (!mapboxgl.accessToken) return;
+    if (!map) {
+      map = new mapboxgl.Map({
+        container: "map",
+        style: "mapbox://styles/mapbox/dark-v11",
+        zoom: 11,
+      });
+    }
+
+    const doRender = () => {
+      // Remove previously rendered layers/sources
+      renderedLayerIds.forEach(sid => {
+        if (map.getLayer(sid)) map.removeLayer(sid);
+        if (map.getSource(sid)) map.removeSource(sid);
+      });
+      renderedLayerIds = [];
+
+      // Remove old markers
+      document.querySelectorAll(".travel-marker").forEach(el => el.remove());
+
+      const bounds = new mapboxgl.LngLatBounds();
+
+      (mapData.days || []).forEach((day, i) => {
+        const color = day.color || "#38bdf8";
+
+        // Draw route polyline (polyline6 encoded)
+        if (day.routePolyline) {
+          const coords = decodePolyline(day.routePolyline, 6).map(([lat, lng]) => [lng, lat]);
+          const sid = `route-${i}`;
+          map.addSource(sid, {
+            type: "geojson",
+            data: { type: "Feature", geometry: { type: "LineString", coordinates: coords } }
+          });
+          map.addLayer({
+            id: sid, type: "line", source: sid,
+            paint: { "line-color": color, "line-width": 3, "line-opacity": 0.8 }
+          });
+          renderedLayerIds.push(sid);
+        }
+
+        // Add markers
+        (day.markers || []).forEach((m, j) => {
+          if (!m.lat || !m.lng) return;
+          const lngLat = [m.lng, m.lat];
+          bounds.extend(lngLat);
+
+          const el = document.createElement("div");
+          el.className = "travel-marker";
+          el.style.cssText = `width:28px;height:28px;border-radius:50%;background:${color};border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;cursor:pointer;`;
+          el.textContent = j + 1;
+
+          const popup = new mapboxgl.Popup({ offset: 12 }).setHTML(`
+            <div style="max-width:180px">
+              ${m.photoUrl ? `<img src="${m.photoUrl}" style="width:100%;height:90px;object-fit:cover;border-radius:6px;margin-bottom:4px" onerror="this.style.display='none'">` : ''}
+              <strong>${m.name}</strong><br>
+              ${m.rating ? `⭐ ${m.rating}` : ''} ${m.cost ? `· ${m.cost.toLocaleString('vi-VN')}₫` : ''}
+            </div>`);
+
+          new mapboxgl.Marker({ element: el }).setLngLat(lngLat).setPopup(popup).addTo(map);
+        });
+      });
+
+      if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+    };
+
+    if (map.loaded()) doRender();
+    else map.on("load", doRender);
+  };
+
+  // ── Event handlers ────────────────────────────────────────
+
+  const handleSend = async () => {
+    const text = userInputEl.value.trim();
+    if (!text) return;
+    sendBtn.disabled = true;
+    addMessage("user", text);
+    userInputEl.value = "";
+    setLoading(true);
+
+    try {
+      const res = await sendChat();
+      if (res.type === "clarification") {
+        setLoading(false);
+        addMessage("assistant", res.clarification);
+      } else {
+        renderPlan(res.plan);
+      }
+    } catch (e) {
+      setLoading(false);
+      addMessage("assistant", "Có lỗi xảy ra. Vui lòng thử lại.");
+    } finally {
+      sendBtn.disabled = false;
+    }
+  };
+
+  const handleAction = async (style) => {
+    if (!currentPlan) return;
+    setLoading(true);
+    try {
+      const res = await sendChat(style);
+      if (res.type === "plan") renderPlan(res.plan);
+      else setLoading(false);
+    } catch (e) {
+      setLoading(false);
+      addMessage("assistant", "Có lỗi khi thay đổi lịch trình. Vui lòng thử lại.");
+    }
+  };
+
+  sendBtn.addEventListener("click", handleSend);
+  userInputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   });
 
-  const dec = () => safe(async () => {
-    const { count } = await api.post("/api/decrement");
-    render(count, "down");
-    logEvent(`-1 → ${pad(count)}`, "down");
+  document.getElementById("regenerate-btn").addEventListener("click", () => handleAction(null));
+  document.querySelectorAll(".action-btn[data-style]").forEach(btn => {
+    btn.addEventListener("click", () => handleAction(btn.dataset.style));
   });
-
-  const reset = () => safe(async () => {
-    const { count } = await api.post("/api/reset");
-    render(count, "reset");
-    logEvent(`RESET → ${pad(count)}`, "rst");
-  });
-
-  // ---------- Ripple on click ----------
-  const ripple = (el) => {
-    const r = el.getBoundingClientRect();
-    const d = Math.max(r.width, r.height);
-    const node = document.createElement("span");
-    node.className = "ripple";
-    node.style.width = node.style.height = d + "px";
-    node.style.left = (event.clientX - r.left - d / 2) + "px";
-    node.style.top  = (event.clientY - r.top  - d / 2) + "px";
-    el.appendChild(node);
-    setTimeout(() => node.remove(), 700);
-  };
-
-  // ---------- Wire up ----------
-  incBtn.addEventListener("click", inc);
-  decBtn.addEventListener("click", dec);
-  resetBtn.addEventListener("click", reset);
-
-  // Keyboard shortcuts
-  window.addEventListener("keydown", (e) => {
-    if (e.repeat) return;
-    if (e.code === "Space" || e.code === "ArrowUp") { e.preventDefault(); inc(); }
-    else if (e.code === "ArrowDown") { e.preventDefault(); dec(); }
-    else if (e.key.toLowerCase() === "r")           { e.preventDefault(); reset(); }
-  });
-
-  // Clock
-  const tick = () => {
-    const d = new Date();
-    clock.textContent = d.toTimeString().slice(0, 8);
-  };
-  tick(); setInterval(tick, 1000);
-
-  // Boot — fetch initial count
-  api.get().then(({ count }) => render(count, "idle"))
-          .catch(() => render(0, "idle"));
 })();

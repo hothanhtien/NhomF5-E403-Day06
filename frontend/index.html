@@ -1,65 +1,71 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="vi">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>COUNTER.exe // by Tiến // press to count</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/style.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Travel Planner</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Mapbox GL JS -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
 </head>
 <body>
-  <!-- Scanlines + grain overlay -->
-  <div class="scanlines" aria-hidden="true"></div>
-  <div class="grain" aria-hidden="true"></div>
 
-  <!-- Floating status bar -->
-  <header class="status">
-    <div class="status__left">
-      <span class="dot"></span>
-      <span class="status__label">SYSTEM ONLINE</span>
+  <!-- ── Hero ───────────────────────────────────────────── -->
+  <section id="hero">
+    <div class="hero__inner">
+      <h1><span aria-hidden="true">✈</span> AI Travel Planner</h1>
+      <p class="hero__sub">Mô tả chuyến đi của bạn, AI sẽ lên lịch trình hoàn chỉnh.</p>
+
+      <div id="chat-area">
+        <div id="messages"></div>
+        <div class="input-row">
+          <textarea id="user-input" rows="3" aria-label="Mô tả chuyến đi của bạn"
+            placeholder="Tôi muốn đi Đà Lạt 3 ngày 2 đêm, ngân sách 5 triệu, đi 2 người, thích cafe và thiên nhiên…"></textarea>
+          <button id="send-btn">Gửi ✈</button>
+        </div>
+      </div>
     </div>
-    <div class="status__center">COUNTER_OS v0.1.0 · by TIẾN</div>
-    <div class="status__right">
-      <span id="clock">--:--:--</span>
-    </div>
-  </header>
+  </section>
 
-  <main class="stage">
-    <!-- Big type label -->
-    <p class="kicker">// tap the button. count things. that's it.</p>
+  <!-- ── Loading ────────────────────────────────────────── -->
+  <div id="loading" class="hidden">
+    <div class="spinner"></div>
+    <p>Đang lên lịch trình…</p>
+  </div>
 
-    <!-- The number — the hero -->
-    <div class="counter" id="counter" data-value="0">
-      <span class="counter__num" id="num">000</span>
-      <span class="counter__caret" aria-hidden="true"></span>
-    </div>
+  <!-- ── Result ─────────────────────────────────────────── -->
+  <main id="result" class="hidden">
 
-    <!-- Button -->
-    <div class="cta-row">
-      <button class="btn btn--primary" id="inc" type="button">
-        <span class="btn__bracket">[</span>
-        <span class="btn__label">PRESS TO COUNT</span>
-        <span class="btn__bracket">]</span>
-        <span class="btn__key">SPACE</span>
-      </button>
-    </div>
-
-    <!-- Mini actions -->
-    <div class="mini">
-      <button class="chip" id="dec" type="button">−1</button>
-      <button class="chip chip--danger" id="reset" type="button">RESET</button>
+    <!-- Action buttons -->
+    <div id="action-bar">
+      <button class="action-btn" data-style="cheaper"><span aria-hidden="true">💰</span> Rẻ hơn</button>
+      <button class="action-btn" data-style="relaxed"><span aria-hidden="true">🌿</span> Nhẹ nhàng hơn</button>
+      <button class="action-btn" data-style="more_food"><span aria-hidden="true">🍜</span> Thêm ăn uống</button>
+      <button id="regenerate-btn" class="action-btn action-btn--primary"><span aria-hidden="true">🔄</span> Tạo lại</button>
     </div>
 
-    <!-- Marquee log -->
-    <div class="log" id="log" aria-live="polite"></div>
+    <div id="result-grid">
+
+      <!-- Itinerary -->
+      <section id="itinerary-panel">
+        <h2>Lịch trình</h2>
+        <div id="itinerary-content"></div>
+      </section>
+
+      <!-- Right column: Map + Budget -->
+      <aside id="sidebar">
+        <div id="map"></div>
+        <section id="budget-panel">
+          <h2>Ngân sách dự kiến</h2>
+          <div id="budget-content"></div>
+        </section>
+      </aside>
+
+    </div>
   </main>
 
-  <footer class="foot">
-    <span>↑/↓ to adjust · R to reset · built with FastAPI</span>
-  </footer>
-
-  <script src="/app.js"></script>
+  <script>/* Mapbox token injected via ?mapbox=TOKEN query param */</script>
+  <script src="app.js"></script>
 </body>
 </html>
