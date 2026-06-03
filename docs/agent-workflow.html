@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Travel Planner — Agent Workflow</title>
+<style>
+  :root {
+    --bg: #060c1a;
+    --surface: #0d1628;
+    --surface2: #141f36;
+    --border: #1e2d4a;
+    --accent: #38bdf8;
+    --accent2: #818cf8;
+    --accent3: #f472b6;
+    --green: #10b981;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --purple: #a855f7;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --dim: #334155;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 40px 24px 80px;
+  }
+
+  /* ── Title ── */
+  .page-title {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .page-title h1 {
+    font-size: 1.9rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--accent2), var(--accent3));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 6px;
+  }
+  .page-title p { color: var(--muted); font-size: .92rem; }
+
+  /* ── Layout ── */
+  .diagram {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    align-items: center;
+  }
+
+  /* ── Arrow ── */
+  .arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 0;
+    color: var(--muted);
+    font-size: .75rem;
+  }
+  .arrow-line {
+    width: 2px;
+    height: 28px;
+    background: linear-gradient(to bottom, var(--border), var(--dim));
+  }
+  .arrow-head {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid var(--dim);
+  }
+  .arrow.accent .arrow-line { background: linear-gradient(to bottom, var(--accent), rgba(56,189,248,.3)); }
+  .arrow.accent .arrow-head { border-top-color: var(--accent); }
+  .arrow.green  .arrow-line { background: linear-gradient(to bottom, var(--green), rgba(16,185,129,.3)); }
+  .arrow.green  .arrow-head { border-top-color: var(--green); }
+
+  /* ── Node styles ── */
+  .node {
+    border-radius: 14px;
+    padding: 14px 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    width: 100%;
+    max-width: 700px;
+    position: relative;
+    transition: box-shadow .2s;
+  }
+  .node:hover { box-shadow: 0 0 0 1px rgba(56,189,248,.25), 0 8px 32px rgba(0,0,0,.5); }
+
+  .node-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 1.2rem; flex-shrink: 0;
+  }
+  .node-body { flex: 1; min-width: 0; }
+  .node-title { font-weight: 700; font-size: .95rem; margin-bottom: 3px; }
+  .node-sub { color: var(--muted); font-size: .8rem; line-height: 1.5; }
+
+  .node-badge {
+    position: absolute; top: 10px; right: 12px;
+    font-size: .68rem; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+
+  /* Color variants */
+  .node--user    { border-color: rgba(56,189,248,.35);  background: rgba(56,189,248,.05); }
+  .node--user    .node-icon { background: rgba(56,189,248,.15); }
+  .node--openai  { border-color: rgba(129,140,248,.4);  background: rgba(129,140,248,.06); }
+  .node--openai  .node-icon { background: rgba(129,140,248,.15); }
+  .node--google  { border-color: rgba(16,185,129,.35);  background: rgba(16,185,129,.05); }
+  .node--google  .node-icon { background: rgba(16,185,129,.15); }
+  .node--mapbox  { border-color: rgba(245,158,11,.35);  background: rgba(245,158,11,.05); }
+  .node--mapbox  .node-icon { background: rgba(245,158,11,.15); }
+  .node--python  { border-color: rgba(168,85,247,.35);  background: rgba(168,85,247,.05); }
+  .node--python  .node-icon { background: rgba(168,85,247,.15); }
+  .node--db      { border-color: rgba(244,114,182,.35); background: rgba(244,114,182,.05); }
+  .node--db      .node-icon { background: rgba(244,114,182,.15); }
+  .node--output  { border-color: rgba(56,189,248,.5);   background: linear-gradient(135deg, rgba(56,189,248,.08), rgba(129,140,248,.06)); }
+  .node--output  .node-icon { background: linear-gradient(135deg, rgba(56,189,248,.2), rgba(129,140,248,.2)); }
+
+  .badge--openai  { background: rgba(129,140,248,.18); color: var(--accent2); }
+  .badge--google  { background: rgba(16,185,129,.15);  color: var(--green); }
+  .badge--mapbox  { background: rgba(245,158,11,.15);  color: var(--yellow); }
+  .badge--python  { background: rgba(168,85,247,.15);  color: var(--purple); }
+  .badge--db      { background: rgba(244,114,182,.15); color: var(--accent3); }
+  .badge--parallel{ background: rgba(56,189,248,.12);  color: var(--accent); }
+
+  /* ── Parallel block ── */
+  .parallel-block {
+    width: 100%;
+    max-width: 900px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+  }
+  .parallel-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .parallel-label::before, .parallel-label::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(56,189,248,.2);
+  }
+  .parallel-grid {
+    display: grid;
+    gap: 8px;
+  }
+  .parallel-grid--2 { grid-template-columns: 1fr 1fr; }
+  .parallel-grid--3 { grid-template-columns: 1fr 1fr 1fr; }
+  .parallel-grid--4 { grid-template-columns: repeat(4, 1fr); }
+
+  .mini-node {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mini-node-icon {
+    width: 28px; height: 28px; border-radius: 7px;
+    display: grid; place-items: center; font-size: .9rem; flex-shrink: 0;
+  }
+  .mini-node-text { font-size: .8rem; font-weight: 600; line-height: 1.35; }
+  .mini-node-sub  { font-size: .72rem; color: var(--muted); }
+
+  /* ── Branch ── */
+  .branch-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    width: 100%;
+    max-width: 900px;
+  }
+  .branch-arm { flex: 1; display: flex; flex-direction: column; align-items: center; }
+  .branch-label {
+    font-size: .72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; padding: 3px 10px; border-radius: 999px;
+    margin-bottom: 6px;
+  }
+  .branch-label--yes { background: rgba(16,185,129,.15); color: var(--green); }
+  .branch-label--no  { background: rgba(239,68,68,.15);  color: var(--red); }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 48px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: .78rem;
+  }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+
+  /* ── Step numbers ── */
+  .step-num {
+    position: absolute; top: -10px; left: 20px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 1px 9px;
+    font-size: .68rem; font-weight: 700; color: var(--muted);
+    letter-spacing: .04em;
+  }
+
+  @media (max-width: 700px) {
+    .parallel-grid--4 { grid-template-columns: repeat(2,1fr); }
+    .parallel-grid--3 { grid-template-columns: 1fr; }
+    .branch-row { flex-direction: column; align-items: center; }
+    .branch-arm { width: 100%; }
+    .node { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">
+  <h1>✈ AI Travel Planner — Agent Workflow</h1>
+  <p>Toàn bộ luồng xử lý từ khi user nhập prompt đến khi trả về lịch trình hoàn chỉnh</p>
+</div>
+
+<div class="diagram">
+
+  <!-- ① USER INPUT -->
+  <div class="node node--user">
+    <span class="step-num">STEP 1</span>
+    <div class="node-icon">🧑</div>
+    <div class="node-body">
+      <div class="node-title">User Input</div>
+      <div class="node-sub">Người dùng nhập nhu cầu bằng tiếng Việt tự nhiên qua giao diện chat<br/>
+        <em>Ví dụ: "Đà Lạt 3 ngày 2 đêm, 2 người, 5 triệu, thích cafe và thiên nhiên"</em>
+      </div>
+    </div>
+    <span class="node-badge" style="background:rgba(56,189,248,.12);color:var(--accent)">Frontend</span>
+  </div>
+
+  <div class="arrow accent"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ② INTENT AGENT -->
+  <div class="node node--openai">
+    <span class="step-num">STEP 2</span>
+    <div class="node-icon">🧠</div>
+    <div class="node-body">
+      <div class="node-title">Intent Agent — GPT-4o-mini</div>
+      <div class="node-sub">
+        Parse 5 intent fields từ conversation history:<br/>
+        <code style="color:var(--accent2)">destination · duration · budget · people · preferences</code><br/>
+        Nếu thiếu field → sinh câu hỏi clarification bằng tiếng Việt
+      </div>
+    </div>
+    <span class="node-badge badge--openai">OpenAI</span>
+  </div>
+
+  <div class="arrow" style="color:var(--muted)"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- BRANCH: complete? -->
+  <div class="branch-row">
+    <div class="branch-arm">
+      <div class="branch-label branch-label--no">❌ Thiếu intent</div>
+      <div class="node node--user" style="max-width:100%">
+        <div class="node-icon" style="font-size:.9rem">💬</div>
+        <div class="node-body">
+          <div class="node-title">Clarification Loop</div>
+          <div class="node-sub">Backend trả <code>type: "clarification"</code><br/>Frontend hiển thị câu hỏi → user trả lời → quay lại Step 2</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;color:var(--dim);font-size:1.5rem;padding-top:28px;">↕</div>
+    <div class="branch-arm">
+      <div class="branch-label branch-label--yes">✅ Đủ 5 intent</div>
+      <div class="node node--openai" style="max-width:100%">
+        <div class="node-icon" style="font-size:.9rem">📋</div>
+        <div class="node-body">
+          <div class="node-title">Intent complete — bắt đầu Planning</div>
+          <div class="node-sub">
+            <code style="color:var(--green)">{ destination, duration, budget, people, preferences }</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow accent"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ③ PARALLEL GOOGLE PLACES SEARCH -->
+  <div class="parallel-block">
+    <div class="parallel-label">⚡ STEP 3 — 4 Google Places Text Search (song song)</div>
+    <div class="parallel-grid parallel-grid--4">
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(16,185,129,.15)">🗺</div>
+        <div><div class="mini-node-text">Attractions</div><div class="mini-node-sub">tourist_attraction<br/>+ preferences</div></div>
+      </div>
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(16,185,129,.15)">🏨</div>
+        <div><div class="mini-node-text">Hotels</div><div class="mini-node-sub">lodging<br/>top 5</div></div>
+      </div>
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(16,185,129,.15)">🍜</div>
+        <div><div class="mini-node-text">Restaurants</div><div class="mini-node-sub">restaurant<br/>+ preferences</div></div>
+      </div>
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(16,185,129,.15)">☕</div>
+        <div><div class="mini-node-text">Cafes</div><div class="mini-node-sub">cafe<br/>top 8</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow green"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ④ PARALLEL PLACE DETAILS -->
+  <div class="parallel-block">
+    <div class="parallel-label">⚡ STEP 4 — Google Place Details (song song ~40 requests, return_exceptions=True)</div>
+    <div class="parallel-grid parallel-grid--3">
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(16,185,129,.15)">📍</div>
+        <div>
+          <div class="mini-node-text">Attraction Details ×18</div>
+          <div class="mini-node-sub">name · lat/lng · rating · address · photos · opening_hours · types</div>
+        </div>
+      </div>
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(16,185,129,.15)">🏨</div>
+        <div>
+          <div class="mini-node-text">Hotel Details ×5</div>
+          <div class="mini-node-sub">name · price_level · rating · photos · address</div>
+        </div>
+      </div>
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(16,185,129,.15)">🍽</div>
+        <div>
+          <div class="mini-node-text">Restaurant + Cafe Details ×18</div>
+          <div class="mini-node-sub">name · price_level · rating · photos · address</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:10px;padding:8px 12px;background:rgba(16,185,129,.07);border-radius:8px;font-size:.78rem;color:var(--muted)">
+      📸 Photo URLs → proxied qua <code style="color:var(--green)">/api/photo?ref=...</code> (API key không lộ client)
+      &nbsp;·&nbsp; Fuzzy name matching làm fallback khi placeId GPT trả không khớp
+    </div>
+  </div>
+
+  <div class="arrow accent"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ⑤ ITINERARY AGENT -->
+  <div class="node node--openai">
+    <span class="step-num">STEP 5</span>
+    <div class="node-icon">✨</div>
+    <div class="node-body">
+      <div class="node-title">Itinerary Agent — GPT-4o</div>
+      <div class="node-sub">
+        Nhận danh sách địa điểm thật → chấm điểm + tạo lịch trình tối ưu<br/>
+        <strong>Scoring:</strong> <code style="color:var(--accent2)">0.35×Preference + 0.20×Rating + 0.15×Popularity + 0.10×TimeFit − 0.10×Cost − 0.10×Distance</code><br/>
+        Output: JSON với <code>itinerary[].items[]</code> — mỗi item có <code>time · type · placeId · lat/lng · estimatedCost · reason</code>
+      </div>
+    </div>
+    <span class="node-badge badge--openai">GPT-4o</span>
+  </div>
+
+  <div class="arrow" style="color:var(--purple)">
+    <div class="arrow-line" style="background:linear-gradient(to bottom, var(--purple), rgba(168,85,247,.3))"></div>
+    <div class="arrow-head" style="border-top-color:var(--purple)"></div>
+  </div>
+
+  <!-- ⑥ PHOTO ENRICHMENT + ROUTE OPTIMIZER -->
+  <div class="parallel-block">
+    <div class="parallel-label" style="color:var(--purple)">⚙️ STEP 6 — Python Deterministic Processing</div>
+    <div class="parallel-grid parallel-grid--2">
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(168,85,247,.15)">🖼</div>
+        <div>
+          <div class="mini-node-text">Photo Enrichment</div>
+          <div class="mini-node-sub">
+            Merge ảnh thật từ Google Details vào từng item<br/>
+            Fallback: match theo tên nếu placeId không khớp<br/>
+            Gán lat/lng/rating/address chính xác
+          </div>
+        </div>
+      </div>
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(168,85,247,.15)">🗺</div>
+        <div>
+          <div class="mini-node-text">Route Optimizer (Nearest-Neighbor)</div>
+          <div class="mini-node-sub">
+            Haversine distance giữa các địa điểm<br/>
+            Sắp xếp thứ tự tối ưu (giảm quãng đường)<br/>
+            Chia đều vào N ngày · đảm bảo mỗi ngày có ăn uống
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow" style="color:var(--yellow)">
+    <div class="arrow-line" style="background:linear-gradient(to bottom, var(--yellow), rgba(245,158,11,.3))"></div>
+    <div class="arrow-head" style="border-top-color:var(--yellow)"></div>
+  </div>
+
+  <!-- ⑦ MAPBOX ROUTES -->
+  <div class="parallel-block" style="border-color:rgba(245,158,11,.3)">
+    <div class="parallel-label" style="color:var(--yellow)">⚡ STEP 7 — Mapbox Directions API (song song theo từng ngày)</div>
+    <div class="parallel-grid parallel-grid--3">
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(245,158,11,.15)">📅</div>
+        <div>
+          <div class="mini-node-text">Ngày 1 Route</div>
+          <div class="mini-node-sub">driving directions<br/>polyline6 + legs</div>
+        </div>
+      </div>
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(245,158,11,.15)">📅</div>
+        <div>
+          <div class="mini-node-text">Ngày 2 Route</div>
+          <div class="mini-node-sub">duration_minutes<br/>distance_km</div>
+        </div>
+      </div>
+      <div class="mini-node">
+        <div class="mini-node-icon" style="background:rgba(245,158,11,.15)">📅</div>
+        <div>
+          <div class="mini-node-text">Ngày N Route</div>
+          <div class="mini-node-sub">travelTimeFromPrevious<br/>→ attach vào items</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:10px;padding:8px 12px;background:rgba(245,158,11,.07);border-radius:8px;font-size:.78rem;color:var(--muted)">
+      Endpoint: <code style="color:var(--yellow)">mapbox/driving/{lng,lat;lng,lat;...}?geometries=polyline6</code>
+    </div>
+  </div>
+
+  <div class="arrow" style="color:var(--purple)">
+    <div class="arrow-line" style="background:linear-gradient(to bottom, var(--purple), rgba(168,85,247,.3))"></div>
+    <div class="arrow-head" style="border-top-color:var(--purple)"></div>
+  </div>
+
+  <!-- ⑧ BUDGET -->
+  <div class="node node--python">
+    <span class="step-num">STEP 8</span>
+    <div class="node-icon">💰</div>
+    <div class="node-body">
+      <div class="node-title">Budget Estimator + Reviser (Python)</div>
+      <div class="node-sub">
+        <strong>Estimate:</strong> hotel×nights + Σ(food·people) + Σ(cafe·people) + Σ(tickets·people) + transport + 10% backup<br/>
+        <strong>Revise:</strong> Nếu total &gt; budget → cắt items có score thấp nhất <code>(rating+1)/cost</code> cho đến khi vừa ngân sách<br/>
+        Giữ ít nhất 2 items/ngày · không cắt hotel items
+      </div>
+    </div>
+    <span class="node-badge badge--python">Python</span>
+  </div>
+
+  <div class="arrow" style="color:var(--yellow)">
+    <div class="arrow-line" style="background:linear-gradient(to bottom, var(--yellow), rgba(245,158,11,.3))"></div>
+    <div class="arrow-head" style="border-top-color:var(--yellow)"></div>
+  </div>
+
+  <!-- ⑨ RECALCULATE ROUTES -->
+  <div class="node node--mapbox">
+    <span class="step-num">STEP 9</span>
+    <div class="node-icon">🔄</div>
+    <div class="node-body">
+      <div class="node-title">Recalculate Routes after Budget Revision</div>
+      <div class="node-sub">
+        Sau khi cắt items → tính lại routes cho chunks mới<br/>
+        Attach <code>travelTimeFromPrevious</code> chính xác vào từng item
+      </div>
+    </div>
+    <span class="node-badge badge--mapbox">Mapbox</span>
+  </div>
+
+  <div class="arrow" style="color:var(--purple)">
+    <div class="arrow-line" style="background:linear-gradient(to bottom, var(--purple), rgba(168,85,247,.3))"></div>
+    <div class="arrow-head" style="border-top-color:var(--purple)"></div>
+  </div>
+
+  <!-- ⑩ VALIDATION -->
+  <div class="node node--python">
+    <span class="step-num">STEP 10</span>
+    <div class="node-icon">✅</div>
+    <div class="node-body">
+      <div class="node-title">Validation Agent (Python)</div>
+      <div class="node-sub">
+        Kiểm tra: vượt ngân sách? · quá nhiều điểm/ngày (&gt;6)? · cảnh báo gì cần thông báo user?<br/>
+        Trả về <code>warnings[]</code> để hiển thị trên frontend
+      </div>
+    </div>
+    <span class="node-badge badge--python">Python</span>
+  </div>
+
+  <div class="arrow" style="color:var(--accent3)">
+    <div class="arrow-line" style="background:linear-gradient(to bottom, var(--accent3), rgba(244,114,182,.3))"></div>
+    <div class="arrow-head" style="border-top-color:var(--accent3)"></div>
+  </div>
+
+  <!-- ⑪ DATABASE -->
+  <div class="node node--db">
+    <span class="step-num">STEP 11</span>
+    <div class="node-icon">🗄</div>
+    <div class="node-body">
+      <div class="node-title">Save to PostgreSQL (TypeORM via SQLAlchemy AsyncSession)</div>
+      <div class="node-sub">
+        Table: <code>travel_plans</code> — lưu <code>intent · itinerary · budget_summary · map_data · warnings</code><br/>
+        DB: <code>postgresql+asyncpg://100.98.146.87:15433/travel_ai</code> · rollback nếu commit lỗi (không crash request)
+      </div>
+    </div>
+    <span class="node-badge badge--db">PostgreSQL</span>
+  </div>
+
+  <div class="arrow accent"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ⑫ FINAL OUTPUT -->
+  <div class="node node--output">
+    <span class="step-num">STEP 12</span>
+    <div class="node-icon">🎉</div>
+    <div class="node-body">
+      <div class="node-title">Final JSON Response → Frontend Renders</div>
+      <div class="node-sub">
+        <code style="color:var(--accent)">{ intent, itinerary[], budgetSummary, mapData{days[{markers,routePolyline}]}, warnings, hotel, planId }</code><br/><br/>
+        Frontend renders:
+        <strong>Mapbox GL map</strong> (markers + polyline routes per day) &nbsp;·&nbsp;
+        <strong>Itinerary cards</strong> (ảnh thật, rating, cost, reason) &nbsp;·&nbsp;
+        <strong>Budget panel</strong> &nbsp;·&nbsp;
+        <strong>Detail side panel</strong> (click marker hoặc card)
+      </div>
+    </div>
+    <span class="node-badge" style="background:rgba(56,189,248,.15);color:var(--accent)">Frontend</span>
+  </div>
+
+  <!-- LEGEND -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--accent2)"></div> OpenAI (GPT-4o-mini / GPT-4o)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Google Places API</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> Mapbox Directions API</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div> Python (deterministic)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--accent3)"></div> PostgreSQL</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Frontend / User</div>
+    <div class="legend-item">⚡ Song song = asyncio.gather</div>
+  </div>
+
+</div>
+
+</body>
+</html>
