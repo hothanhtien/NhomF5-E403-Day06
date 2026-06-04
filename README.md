@@ -1,12 +1,25 @@
-# Counter — Frontend + FastAPI
+# AI Travel Planner Agent
 
-Press the button. Count things. FE và BE tách hẳn.
+AI Agent hỗ trợ lập kế hoạch du lịch đầu-cuối: parse intent → tìm địa điểm (Google Places) → tối ưu lịch trình → render map (Mapbox) → lưu PostgreSQL.
+
+## 🌐 URL Deploy
+
+| Môi trường | URL | Ghi chú |
+|---|---|---|
+| **Production (Cloudflare Tunnel)** | https://tienop.khoav4.com | Domain chính, đi qua cloudflared |
+| **Local (qua nginx)** | http://localhost:8080 | Truy cập trực tiếp container nginx |
+| **Local (FE dev mode)** | http://localhost:5173 | Chạy `npm run dev` trong `frontend/` |
+| **Backend API (internal)** | http://localhost:8001 | FastAPI, chỉ nginx proxy, không public trực tiếp |
+
+> ⚠️ Sau khi deploy, đợi ~30s cho cloudflared khởi tạo tunnel rồi mới truy cập `https://tienop.khoav4.com`.
 
 ## Cấu trúc
 ```
 .
 ├── backend/             # FastAPI — API only
-│   ├── Dockerfile
+│   ├── agents/          # Intent + Itinerary agents
+│   ├── routers/         # /chat, /plans
+│   ├── tools/           # Places, Routes, Budget, Optimizer
 │   ├── main.py
 │   └── requirements.txt
 ├── frontend/            # Static — HTML/CSS/JS, serve tĩnh
@@ -14,19 +27,27 @@ Press the button. Count things. FE và BE tách hẳn.
 │   ├── style.css
 │   ├── app.js
 │   └── package.json
+├── nginx/               # Reverse proxy config
 ├── cloudflared/         # Tunnel credentials (của bạn, không sửa)
-└── docker-compose.yml   # Chỉ chạy backend
+└── docker-compose.yml   # Orchestration: backend + nginx + cloudflared
 ```
 
 ## Chạy
 
-**Backend (FastAPI):**
+**Toàn bộ stack (backend + nginx + cloudflared):**
 ```bash
 docker compose up -d --build
-# API ở http://localhost:8001
+# Web: http://localhost:8080
+# Sau ~30s: https://tienop.khoav4.com
 ```
 
-**Frontend (cần Node để chạy `serve`):**
+**Chỉ Backend (FastAPI, dev):**
+```bash
+docker compose up -d --build backend
+# API ở http://localhost:8001 (chỉ nginx proxy, không public)
+```
+
+**Frontend dev mode (cần Node):**
 ```bash
 cd frontend
 npm run dev
