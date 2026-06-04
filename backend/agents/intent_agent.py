@@ -4,7 +4,8 @@ from openai import AsyncOpenAI
 
 client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-INTENT_FIELDS = ["destination", "duration", "budget", "people", "preferences"]
+# preferences is optional — empty list is valid (plan a general trip)
+INTENT_FIELDS = ["destination", "duration", "budget", "people"]
 
 SYSTEM_PROMPT = """Bạn là travel planner AI. Hãy phân tích yêu cầu du lịch của người dùng.
 
@@ -15,6 +16,12 @@ Trích xuất 5 trường sau:
 - people: number (số người)
 - preferences: array of strings (sở thích, phong cách)
 
+QUAN TRỌNG — Xử lý trường hợp người dùng CHƯA có điểm đến:
+Nếu người dùng nói họ chưa biết muốn đi đâu nhưng mô tả phong cách (yên tĩnh, mát mẻ, biển, núi, v.v.),
+hãy TỰ GỢI Ý một điểm đến phù hợp tại Việt Nam dựa trên sở thích đó và điền vào "destination".
+Ví dụ: "yên tĩnh, mát mẻ, cảnh đẹp" → gợi ý "Đà Lạt" hoặc "Mộc Châu" hoặc "Sapa".
+KHÔNG hỏi lại về destination nếu user đã nói rõ họ không có điểm đến cụ thể.
+
 Trả về JSON duy nhất theo format:
 {
   "destination": null hoặc string,
@@ -22,11 +29,14 @@ Trả về JSON duy nhất theo format:
   "budget": null hoặc number,
   "people": null hoặc number,
   "preferences": [] hoặc array,
-  "clarification": null hoặc string
+  "clarification": null hoặc string,
+  "destinationSuggested": true/false
 }
 
-Nếu thiếu bất kỳ trường nào (null hoặc rỗng), hãy điền "clarification" bằng câu hỏi tự nhiên bằng tiếng Việt để hỏi lại người dùng.
-Nếu đủ thông tin, để clarification là null."""
+Quy tắc clarification:
+- Nếu destination vẫn null sau khi đã cố gợi ý, MỚI hỏi về destination.
+- Nếu thiếu các trường khác (duration, budget, people), hỏi ngắn gọn về trường đó.
+- Nếu đủ thông tin, để clarification là null."""
 
 
 async def parse_intent(conversation: list[dict]) -> dict:

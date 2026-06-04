@@ -24,18 +24,18 @@
   // ── Mapbox token ───────────────────────────────────────
   const params = new URLSearchParams(location.search);
   const tokenFromUrl = params.get("mapbox") || "";
+
+  const _configReady = tokenFromUrl
+    ? Promise.resolve(tokenFromUrl)
+    : fetch(`${API_BASE}/api/config`)
+        .then(r => r.json())
+        .then(cfg => cfg.mapboxToken || "")
+        .catch(() => "");
+
   if (tokenFromUrl) {
     mapboxgl.accessToken = tokenFromUrl;
   } else {
-    fetch(`${API_BASE}/api/config`)
-      .then(r => r.json())
-      .then(cfg => {
-        if (cfg.mapboxToken) {
-          mapboxgl.accessToken = cfg.mapboxToken;
-          if (currentPlan) renderMap(currentPlan.mapData);
-        }
-      })
-      .catch(() => {});
+    _configReady.then(token => { if (token) mapboxgl.accessToken = token; });
   }
 
   // ── State ──────────────────────────────────────────────
@@ -278,9 +278,14 @@
   };
 
   // ── Map ────────────────────────────────────────────────
-  const renderMap = (mapData) => {
+  const renderMap = async (mapData) => {
     const mapEl = $("map");
     if (!mapEl) return;
+
+    if (!mapboxgl.accessToken) {
+      const token = await _configReady;
+      if (token) mapboxgl.accessToken = token;
+    }
 
     if (!mapboxgl.accessToken) {
       mapEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">⚠️ Mapbox token chưa được cấu hình.</div>';

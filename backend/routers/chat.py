@@ -74,7 +74,8 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=502, detail=str(exc))
 
     if not is_intent_complete(intent):
-        return ChatResponse(type="clarification", clarification=intent.get("clarification"))
+        clarification = intent.get("clarification") or _missing_fields_question(intent)
+        return ChatResponse(type="clarification", clarification=clarification)
 
     destination = intent["destination"]
     preferences = intent.get("preferences", [])
@@ -343,6 +344,22 @@ async def _fill_unsplash_photos(items: list[dict], destination: str) -> None:
         if isinstance(url, str) and url:
             item["photoUrl"] = url
             item["photoUrls"] = [url]
+
+
+def _missing_fields_question(intent: dict) -> str:
+    """Fallback question when GPT forgot to fill clarification despite missing fields."""
+    missing = []
+    if not intent.get("destination"):
+        missing.append("điểm đến")
+    if not intent.get("duration"):
+        missing.append("thời gian (số ngày)")
+    if not intent.get("budget"):
+        missing.append("ngân sách")
+    if not intent.get("people"):
+        missing.append("số người")
+    if missing:
+        return f"Bạn có thể cho mình biết thêm về {', '.join(missing)} không?"
+    return "Bạn có thể cung cấp thêm thông tin về chuyến đi không?"
 
 
 def _norm(s: str) -> str:
