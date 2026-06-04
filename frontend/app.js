@@ -236,6 +236,14 @@
   };
 
   // ── Hotel ──────────────────────────────────────────────
+  const PRICE_LEVEL_LABEL = {
+    PRICE_LEVEL_FREE: "Miễn phí",
+    PRICE_LEVEL_INEXPENSIVE: "Bình dân (< 400k/đêm)",
+    PRICE_LEVEL_MODERATE: "Trung bình (~800k/đêm)",
+    PRICE_LEVEL_EXPENSIVE: "Cao cấp (~1.5tr/đêm)",
+    PRICE_LEVEL_VERY_EXPENSIVE: "Sang trọng (> 3tr/đêm)",
+  };
+
   const renderHotel = (hotel) => {
     const panel = $("hotel-panel");
     if (!panel) return;
@@ -244,15 +252,28 @@
     const photo = hotel.photoUrl
       ? `<img src="${hotel.photoUrl}" alt="${escapeHtml(hotel.name)}" onerror="this.style.display='none'" />`
       : `<div style="background:var(--surface-3);width:64px;height:64px;border-radius:6px;display:grid;place-items:center;font-size:1.5rem;">🏨</div>`;
+
+    const bookingUrl = `https://www.booking.com/search.html?ss=${encodeURIComponent(hotel.name)}`;
+    const mapsUrl = hotel.placeId
+      ? `https://www.google.com/maps/place/?q=place_id:${hotel.placeId}`
+      : (hotel.lat && hotel.lng ? `https://www.google.com/maps?q=${hotel.lat},${hotel.lng}` : "");
+
+    const priceLabel = PRICE_LEVEL_LABEL[hotel.priceLevel] || "";
+
     const content = $("hotel-content");
     if (content) content.innerHTML = `
       <div class="hotel-card">
         ${photo}
-        <div>
+        <div class="hotel-card__info">
           <div class="hotel-card__name">${escapeHtml(hotel.name)}</div>
           <div class="hotel-card__rating">${hotel.rating ? "⭐ " + hotel.rating : ""}${hotel.reviewCount ? " · " + hotel.reviewCount + " reviews" : ""}</div>
-          <div class="hotel-card__price">${hotel.priceLevel || ""}</div>
+          ${priceLabel ? `<div class="hotel-card__price">${escapeHtml(priceLabel)}</div>` : ""}
+          ${hotel.address ? `<div class="hotel-card__address">📍 ${escapeHtml(hotel.address)}</div>` : ""}
         </div>
+      </div>
+      <div class="hotel-card__actions">
+        <a class="hotel-btn hotel-btn--primary" href="${bookingUrl}" target="_blank" rel="noopener">🛏 Đặt phòng Booking.com</a>
+        ${mapsUrl ? `<a class="hotel-btn" href="${mapsUrl}" target="_blank" rel="noopener">🗺 Xem Google Maps</a>` : ""}
       </div>`;
   };
 
@@ -431,6 +452,27 @@
       } else {
         dirEl.style.display = "none";
       }
+    }
+
+    // Booking button — only for hotel items
+    let bookingEl = $("detail-booking");
+    if (item.type === "hotel") {
+      const hotelName = item.bookingName || item.name || "";
+      const bookingUrl = `https://www.booking.com/search.html?ss=${encodeURIComponent(hotelName)}`;
+      if (!bookingEl) {
+        bookingEl = document.createElement("a");
+        bookingEl.id = "detail-booking";
+        bookingEl.className = "modal__btn modal__btn--booking";
+        bookingEl.target = "_blank";
+        bookingEl.rel = "noopener";
+        const actionsEl = document.querySelector(".detail-panel__actions");
+        if (actionsEl) actionsEl.appendChild(bookingEl);
+      }
+      bookingEl.href = bookingUrl;
+      bookingEl.textContent = "🛏 Đặt phòng";
+      bookingEl.style.display = "";
+    } else if (bookingEl) {
+      bookingEl.style.display = "none";
     }
 
     // Highlight card in itinerary list

@@ -11,6 +11,32 @@ from tools.places import fetch_photo_bytes
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Add new columns if they don't exist (safe to run multiple times)
+        migrations = [
+            "ALTER TABLE travel_plans ADD COLUMN IF NOT EXISTS destination VARCHAR(200) NOT NULL DEFAULT ''",
+            "ALTER TABLE travel_plans ADD COLUMN IF NOT EXISTS budget INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE travel_plans ADD COLUMN IF NOT EXISTS people INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE travel_plans ADD COLUMN IF NOT EXISTS duration_days INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE travel_plans ADD COLUMN IF NOT EXISTS within_budget BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE travel_plans ADD COLUMN IF NOT EXISTS total_cost INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE travel_plans ADD COLUMN IF NOT EXISTS prompt TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE travel_plans ADD COLUMN IF NOT EXISTS preferences JSON DEFAULT '[]'",
+            "CREATE INDEX IF NOT EXISTS ix_travel_plans_destination ON travel_plans (destination)",
+            "CREATE INDEX IF NOT EXISTS ix_travel_plans_created_at ON travel_plans (created_at)",
+        ]
+        for sql in migrations:
+            await conn.execute(__import__("sqlalchemy").text(sql))
+        # Backfill denormalized columns from intent JSON for existing rows
+        await conn.execute(__import__("sqlalchemy").text("""
+            UPDATE travel_plans SET
+                destination  = COALESCE(intent->>'destination', ''),
+                budget       = COALESCE((intent->>'budget')::int, 0),
+                people       = COALESCE((intent->>'people')::int, 1),
+                within_budget = COALESCE((budget_summary->>'withinBudget')::boolean, true),
+                total_cost   = COALESCE((budget_summary->>'total')::int, 0),
+                preferences  = COALESCE(intent->'preferences', '[]'::json)
+            WHERE destination = ''
+        """))
     yield
 
 

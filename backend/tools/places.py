@@ -5,6 +5,8 @@ import httpx
 
 GOOGLE_API_KEY = os.environ["GOOGLE_MAPS_API_KEY"]
 PLACES_BASE = "https://maps.googleapis.com/maps/api/place"
+UNSPLASH_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+UNSPLASH_BASE = "https://api.unsplash.com"
 
 # Pattern expected for Google Places photo references (alphanumeric + dash/underscore)
 _PHOTO_REF_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
@@ -108,6 +110,34 @@ async def fetch_photo_bytes(photo_ref: str) -> bytes:
         )
         resp.raise_for_status()
         return resp.content
+
+
+async def search_unsplash_photo(query: str) -> str:
+    """
+    Search Unsplash for a landscape photo matching the query.
+    Returns the 'regular' image URL or "" if not found / key missing.
+    """
+    if not UNSPLASH_KEY:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                f"{UNSPLASH_BASE}/search/photos",
+                headers={"Authorization": f"Client-ID {UNSPLASH_KEY}"},
+                params={
+                    "query": query,
+                    "per_page": 1,
+                    "orientation": "landscape",
+                    "content_filter": "high",
+                },
+            )
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+            if results:
+                return results[0]["urls"]["regular"]
+    except Exception:
+        pass
+    return ""
 
 
 def _extract_photo_ref(photos: list) -> str:

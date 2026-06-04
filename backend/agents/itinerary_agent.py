@@ -10,14 +10,18 @@ Thuật toán scoring:
 Final Score = 0.35 × Preference Match + 0.20 × Rating + 0.15 × Popularity + 0.10 × Time Fit - 0.10 × Cost Penalty - 0.10 × Distance Penalty
 
 Nhiệm vụ:
-1. Chấm điểm từng địa điểm theo sở thích user
-2. Ưu tiên địa điểm phù hợp, loại địa điểm không phù hợp
-3. Gom cụm địa điểm gần nhau theo địa lý
-4. Chia đều theo số ngày
-5. Tối ưu thứ tự trong mỗi ngày (tránh đi vòng)
-6. Thêm nhà hàng buổi trưa + tối mỗi ngày
-7. Thêm cafe phù hợp sở thích
-8. Bắt đầu mỗi ngày từ 08:00, kết thúc ~21:00
+1. Chọn MỘT khách sạn phù hợp ngân sách (từ available_hotels nếu có, nếu không thì tự suggest khách sạn thật tại điểm đến)
+2. Chấm điểm từng địa điểm theo sở thích user
+3. Ưu tiên địa điểm phù hợp, loại địa điểm không phù hợp
+4. Gom cụm địa điểm gần nhau theo địa lý
+5. Chia đều theo số ngày
+6. Tối ưu thứ tự trong mỗi ngày (tránh đi vòng)
+7. Thêm nhà hàng buổi trưa + tối mỗi ngày
+8. Thêm cafe phù hợp sở thích
+9. Ngày đầu: thêm hotel check-in (type:"hotel") vào CUỐI ngày lúc 20:00
+   Ngày 2 trở đi: thêm hotel (type:"hotel") vào ĐẦU ngày lúc 07:30 làm điểm xuất phát
+   Ngày cuối: thêm hotel check-out (type:"hotel") vào CUỐI ngày lúc 12:00, reason: "Trả phòng và chuẩn bị về."
+10. Bắt đầu mỗi ngày từ 08:00, kết thúc ~21:00
 
 Mỗi item cần có:
 - time: "HH:MM"
@@ -25,25 +29,35 @@ Mỗi item cần có:
 - placeId: nếu địa điểm có trong available_places/hotels/restaurants thì copy "placeId" gốc, nếu không có thì để null
 - type: "attraction" | "cafe" | "restaurant" | "check-in" | "hotel"
 - reason: lý do chọn (tiếng Việt, 1 câu)
-- estimatedCost: số VND/người
+- estimatedCost: số VND/người (hotel = 0 vì tính riêng trong budget)
 - estimatedDuration: phút
 - travelTimeFromPrevious: "X phút"
-- lat: tọa độ thực tế của địa điểm
-- lng: tọa độ thực tế của địa điểm
+- lat: tọa độ thực tế của địa điểm (bắt buộc, dùng tọa độ thực)
+- lng: tọa độ thực tế của địa điểm (bắt buộc)
 - photoUrl: để ""
 - rating: điểm đánh giá (0-5)
 
 Quan trọng:
 - placeId PHẢI copy nguyên xi từ trường "placeId" trong "available_places", "available_hotels" hoặc "available_restaurants". KHÔNG bịa, KHÔNG sửa.
-- Nếu không có địa điểm phù hợp trong danh sách, để placeId = null và điền lat/lng/name/rating/photoUrl tốt nhất có thể.
+- Nếu không có địa điểm phù hợp trong danh sách, để placeId = null và điền lat/lng/name/rating tốt nhất có thể.
 - Ưu tiên sử dụng địa điểm từ danh sách available (có ảnh thật và tọa độ chính xác).
-- Mỗi ngày có 4-6 điểm: 1 cafe sáng, 1-2 attraction, 1 restaurant trưa, 1 attraction/checkin, 1 restaurant tối.
+- Mỗi ngày có 4-6 điểm (chưa tính hotel anchor): 1 cafe sáng, 1-2 attraction, 1 restaurant trưa, 1 attraction/checkin, 1 restaurant tối.
 - estimatedCost VND/người: cafe 60-100k, restaurant 80-200k, attraction free-200k, hotel 0.
-- estimatedDuration (phút): cafe 60-90, attraction 60-120, restaurant 60-75, hotel checkin 20-30.
-- lat/lng: dùng tọa độ chính xác từ available_places nếu có, không bịa tọa độ.
+- estimatedDuration (phút): cafe 60-90, attraction 60-120, restaurant 60-75, hotel 20-30.
+- lat/lng: dùng tọa độ chính xác, KHÔNG bịa ngẫu nhiên.
 
 Trả về JSON duy nhất:
 {
+  "suggested_hotel": {
+    "name": "tên khách sạn thật",
+    "placeId": "copy từ available_hotels nếu có, null nếu không",
+    "lat": tọa độ thực,
+    "lng": tọa độ thực,
+    "rating": số,
+    "address": "địa chỉ",
+    "priceLevel": "PRICE_LEVEL_INEXPENSIVE|PRICE_LEVEL_MODERATE|PRICE_LEVEL_EXPENSIVE",
+    "bookingName": "tên để search trên Booking.com"
+  },
   "itinerary": [
     {
       "day": 1,
@@ -80,4 +94,4 @@ async def build_itinerary(intent: dict, places: list[dict], hotels: list[dict], 
     except (IndexError, json.JSONDecodeError, Exception) as exc:
         raise ValueError(f"Itinerary agent failed: {exc}") from exc
 
-    return result.get("itinerary", [])
+    return result.get("itinerary", []), result.get("suggested_hotel")

@@ -7,7 +7,7 @@ from database import get_db
 from models import TravelPlan
 from agents.intent_agent import parse_intent, is_intent_complete
 from agents.itinerary_agent import build_itinerary
-from tools.places import search_places, get_place_details
+from tools.places import search_places, get_place_details, search_unsplash_photo
 from tools.routes import calculate_route
 from tools.budget import estimate_budget, validate_itinerary
 from tools.optimizer import (
@@ -115,9 +115,12 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
 
     # ── Step 4: Build itinerary via GPT-4o ────────────────
     try:
-        itinerary = await build_itinerary(intent, place_details, hotels, all_restaurants)
+        itinerary, suggested_hotel = await build_itinerary(intent, place_details, hotels, all_restaurants)
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
+    # Use suggested_hotel from GPT as fallback when Google Places returns nothing
+    effective_hotel = hotels[0] if hotels else (suggested_hotel or {})
 
     # ── Step 4a: Build a rich lookup for photo/coord enrichment
     # Key by placeId AND by normalized name for fuzzy fallback
@@ -152,12 +155,28 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
                 item.setdefault("photoUrls", [])
             flat_items.append(item)
 
+    # ── Step 4a-2: Unsplash fallback for items without photos ─
+    await _fill_unsplash_photos(flat_items, destination)
+
     # ── Step 4b: Nearest-neighbor route optimization ───────
     days = parse_duration_days(intent.get("duration", "2 đêm"))
     day_chunks = optimize_route(flat_items, days=days)
 
     # Ensure each day has at least 1 food/cafe item
     _ensure_food_per_day(day_chunks)
+
+    # ── Step 4c: Inject hotel as anchor for each day ───────
+    # Remove all hotel-related items GPT placed (type hotel/check-out, or name matches
+    # hotel name) so we can inject deterministically at correct positions.
+    if effective_hotel:
+        hotel_name = effective_hotel.get("name", "")
+        for chunk in day_chunks:
+            chunk[:] = [
+                it for it in chunk
+                if it.get("type") not in ("hotel",)
+                and (not hotel_name or it.get("name") != hotel_name)
+            ]
+        _inject_hotel_anchors(day_chunks, effective_hotel)
 
     # ── Step 5: Calculate Mapbox routes per day ────────────
     def _day_coords(day: list[dict]) -> list[tuple[float, float]]:
@@ -186,7 +205,7 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
         })
 
     # ── Step 6: Budget + revise ────────────────────────────
-    hotel = hotels[0] if hotels else {}
+    hotel = effective_hotel
     people = intent.get("people", 2)
     budget = intent.get("budget", 0) or 0
 
@@ -268,7 +287,18 @@ async def chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     }
 
     # ── Step 9: Persist to DB ──────────────────────────────
+    original_prompt = next(
+        (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
+    )
     record = TravelPlan(
+        destination=intent.get("destination", ""),
+        budget=intent.get("budget", 0) or 0,
+        people=intent.get("people", 1) or 1,
+        duration_days=parse_duration_days(intent.get("duration", "1 ngày")),
+        within_budget=budget_summary.get("withinBudget", True),
+        total_cost=budget_summary.get("total", 0),
+        prompt=original_prompt,
+        preferences=intent.get("preferences", []),
         intent=intent,
         itinerary=final_itinerary,
         budget_summary=budget_summary,
@@ -293,9 +323,68 @@ async def _empty_route() -> dict:
     return {"polyline": "", "duration_minutes": 0, "distance_km": 0.0, "legs": []}
 
 
+async def _fill_unsplash_photos(items: list[dict], destination: str) -> None:
+    """
+    For each item that has no photoUrl, fetch one from Unsplash.
+    Batches all requests in parallel to keep latency low.
+    Items with type 'hotel' use the hotel name + destination as query.
+    """
+    needs_photo = [it for it in items if not it.get("photoUrl")]
+    if not needs_photo:
+        return
+
+    async def _fetch(item: dict) -> str:
+        name = item.get("name", "")
+        query = f"{name} {destination}" if name else destination
+        return await search_unsplash_photo(query)
+
+    urls = await asyncio.gather(*[_fetch(it) for it in needs_photo], return_exceptions=True)
+    for item, url in zip(needs_photo, urls):
+        if isinstance(url, str) and url:
+            item["photoUrl"] = url
+            item["photoUrls"] = [url]
+
+
 def _norm(s: str) -> str:
     """Normalize place name for fuzzy matching (lowercase, strip)."""
     return s.lower().strip()
+
+
+def _inject_hotel_anchors(day_chunks: list[list[dict]], hotel: dict) -> None:
+    """
+    Prepend hotel item to each day as the morning departure anchor.
+    Last day gets an extra check-out item appended at the end.
+    """
+    total_days = len(day_chunks)
+    for i, chunk in enumerate(day_chunks):
+        is_first = i == 0
+        is_last = i == total_days - 1
+
+        morning_item = {
+            "time": "08:00",
+            "name": hotel.get("name", "Khách sạn"),
+            "placeId": hotel.get("placeId", ""),
+            "type": "hotel",
+            "reason": "Check-in và nghỉ ngơi tại khách sạn." if is_first else "Xuất phát từ khách sạn buổi sáng.",
+            "estimatedCost": 0,
+            "estimatedDuration": 30,
+            "travelTimeFromPrevious": "",
+            "lat": hotel.get("lat"),
+            "lng": hotel.get("lng"),
+            "photoUrl": hotel.get("photoUrl", ""),
+            "photoUrls": hotel.get("photoUrls", []),
+            "rating": hotel.get("rating", 0),
+            "address": hotel.get("address", ""),
+            "bookingName": hotel.get("name", ""),
+        }
+        chunk.insert(0, morning_item)
+
+        if is_last:
+            checkout_item = dict(morning_item)
+            checkout_item["time"] = "12:00"
+            checkout_item["reason"] = "Trả phòng và chuẩn bị về."
+            checkout_item["estimatedDuration"] = 60
+            chunk.append(checkout_item)
 
 
 def _ensure_food_per_day(day_chunks: list[list[dict]]) -> None:

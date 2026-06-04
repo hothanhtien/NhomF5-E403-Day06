@@ -78,6 +78,18 @@ button { font-family: inherit; }
 
 .topbar__hint { color: var(--text-muted); font-size: .85rem; }
 
+.topbar__dash-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: .83rem;
+  padding: .3rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.topbar__dash-link:hover { background: var(--surface-2); color: var(--accent); border-color: var(--accent); }
+
 /* ── Chat section (always visible) ───────────────────── */
 #chat-section {
   padding: 2rem 1.5rem 1.5rem;
@@ -730,9 +742,47 @@ button { font-family: inherit; }
 }
 
 .hotel-card img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+.hotel-card__info { display: flex; flex-direction: column; gap: .18rem; min-width: 0; }
 .hotel-card__name { font-weight: 700; font-size: .9rem; }
 .hotel-card__rating { color: var(--success); font-size: .8rem; }
-.hotel-card__price { color: var(--warn); font-size: .83rem; margin-top: .12rem; }
+.hotel-card__price { color: var(--warn); font-size: .83rem; }
+.hotel-card__address { color: var(--text-muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.hotel-card__actions {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-top: .6rem;
+}
+.hotel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .5rem .9rem;
+  border-radius: var(--radius-sm);
+  font-size: .83rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all .15s var(--ease);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.hotel-btn:hover { background: var(--surface-3); transform: translateY(-1px); }
+.hotel-btn--primary {
+  background: linear-gradient(135deg, #003580, #0066cc);
+  border-color: #0066cc;
+  color: #fff;
+}
+.hotel-btn--primary:hover { opacity: .9; }
+
+.modal__btn--booking {
+  background: linear-gradient(135deg, #003580, #0066cc);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+}
 
 /* ── Map markers ──────────────────────────────────────── */
 .travel-marker {
