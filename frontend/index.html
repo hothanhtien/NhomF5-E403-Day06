@@ -20,43 +20,71 @@
     <a href="/dashboard.html" class="topbar__dash-link">📊 Dashboard</a>
   </header>
 
-  <!-- ── Chat (always visible) ──────────────────────────── -->
-  <section id="chat-section">
-    <div id="chat-wrapper">
-      <div class="chat-header" id="chat-header-hero">
-        <h1>Lên kế hoạch du lịch <span class="grad">trong vài giây</span></h1>
-        <p class="hero__sub">Mô tả nhu cầu bằng tiếng Việt — AI sẽ gợi ý lịch trình, khách sạn, ngân sách và bản đồ tương tác.</p>
-      </div>
-      <div id="chat-area">
-        <div id="messages"></div>
-        <!-- Inline loading inside chat -->
-        <div id="inline-loading" class="hidden">
-          <div class="inline-loading__inner">
-            <div class="inline-spinner"></div>
-            <span id="inline-loading-text">Đang xử lý…</span>
-          </div>
-        </div>
-        <div class="input-row">
-          <textarea id="user-input" rows="2" aria-label="Mô tả chuyến đi của bạn"
-            placeholder="Ví dụ: Tôi muốn đi Đà Lạt 3 ngày 2 đêm, ngân sách 5 triệu, đi 2 người, thích cafe, thiên nhiên và ít đi bộ."></textarea>
-          <button id="send-btn">
-            <span class="send-label">Gửi</span>
-            <span class="send-icon" aria-hidden="true">✈</span>
-          </button>
-        </div>
-        <div class="quick-prompts" id="quick-prompts">
-          <button class="chip" data-prompt="Tôi muốn đi Đà Lạt 3 ngày 2 đêm, ngân sách 5 triệu, 2 người, thích cafe và thiên nhiên, ít đi bộ.">Đà Lạt 3N2Đ</button>
-          <button class="chip" data-prompt="Phú Quốc 4 ngày 3 đêm, 2 người, ngân sách 15 triệu, thích biển và hải sản.">Phú Quốc 4N3Đ</button>
-          <button class="chip" data-prompt="Sapa 2 ngày 1 đêm, 4 người, ngân sách 6 triệu, thích ruộng bậc thang và văn hóa.">Sapa 2N1Đ</button>
-        </div>
-      </div>
+  <!-- ── Hero (chỉ hiện trước khi có plan) ─────────────── -->
+  <section id="hero-section">
+    <div class="hero__inner">
+      <h1>Lên kế hoạch du lịch <span class="grad">trong vài giây</span></h1>
+      <p class="hero__sub">Mô tả nhu cầu bằng tiếng Việt — AI sẽ gợi ý lịch trình, khách sạn, ngân sách và bản đồ tương tác.</p>
     </div>
   </section>
+
+  <!-- ── Chat widget (hero mode → floating mode) ──────── -->
+  <div id="chat-widget" class="chat-widget--hero">
+
+    <!-- FAB: chỉ hiện khi floating + bị thu nhỏ -->
+    <button id="chat-fab" aria-label="Mở chat" class="hidden">
+      <span class="fab-icon">✈</span>
+      <span id="fab-badge" class="fab-badge hidden"></span>
+    </button>
+
+    <!-- Chat panel -->
+    <div id="chat-panel">
+      <!-- Header chỉ hiện ở floating mode -->
+      <div id="chat-panel-header" class="hidden">
+        <div class="chat-panel-header__left">
+          <span class="chat-panel-header__logo">✈</span>
+          <span class="chat-panel-header__title">AI Travel Planner</span>
+          <span class="chat-panel-header__status" id="chat-status-dot"></span>
+        </div>
+        <div class="chat-panel-header__actions">
+          <button id="new-trip-float-btn" class="chat-header-btn" title="Chuyến mới" aria-label="Tạo chuyến mới">＋</button>
+          <button id="chat-minimize-btn" class="chat-header-btn" title="Thu nhỏ" aria-label="Thu nhỏ chat">−</button>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div id="messages"></div>
+
+      <!-- Inline loading -->
+      <div id="inline-loading" class="hidden">
+        <div class="inline-loading__inner">
+          <div class="inline-spinner"></div>
+          <span id="inline-loading-text">Đang xử lý…</span>
+        </div>
+      </div>
+
+      <!-- Input row -->
+      <div class="chat-panel__input">
+        <textarea id="user-input" rows="2" aria-label="Mô tả chuyến đi"
+          placeholder="Ví dụ: Tôi muốn đi Đà Lạt 3 ngày 2 đêm, ngân sách 5 triệu, đi 2 người, thích cafe, thiên nhiên…"></textarea>
+        <button id="send-btn" aria-label="Gửi">
+          <span class="send-label">Gửi</span>
+          <span class="send-icon" aria-hidden="true">✈</span>
+        </button>
+      </div>
+
+      <!-- Quick prompts -->
+      <div class="quick-prompts" id="quick-prompts">
+        <button class="chip" data-prompt="Tôi muốn đi Đà Lạt 3 ngày 2 đêm, ngân sách 5 triệu, 2 người, thích cafe và thiên nhiên, ít đi bộ.">Đà Lạt 3N2Đ</button>
+        <button class="chip" data-prompt="Phú Quốc 4 ngày 3 đêm, 2 người, ngân sách 15 triệu, thích biển và hải sản.">Phú Quốc 4N3Đ</button>
+        <button class="chip" data-prompt="Sapa 2 ngày 1 đêm, 4 người, ngân sách 6 triệu, thích ruộng bậc thang và văn hóa.">Sapa 2N1Đ</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ── Result ──────────────────────────────────────────── -->
   <main id="result" class="hidden">
 
-    <!-- Summary header -->
     <section id="summary">
       <div class="summary__dest">
         <h2 id="summary-dest">—</h2>
@@ -65,19 +93,16 @@
       <div class="summary__chips" id="summary-chips"></div>
     </section>
 
-    <!-- Action bar -->
     <div id="action-bar">
-      <button class="action-btn" data-style="cheaper"><span aria-hidden="true">💰</span> Rẻ hơn</button>
-      <button class="action-btn" data-style="relaxed"><span aria-hidden="true">🌿</span> Nhẹ nhàng hơn</button>
-      <button class="action-btn" data-style="more_food"><span aria-hidden="true">🍜</span> Thêm ăn uống</button>
-      <button id="regenerate-btn" class="action-btn action-btn--primary"><span aria-hidden="true">🔄</span> Tạo lại</button>
-      <button id="new-trip-btn" class="action-btn action-btn--ghost"><span aria-hidden="true">＋</span> Chuyến mới</button>
+      <button class="action-btn" data-style="cheaper">💰 Rẻ hơn</button>
+      <button class="action-btn" data-style="relaxed">🌿 Nhẹ nhàng hơn</button>
+      <button class="action-btn" data-style="more_food">🍜 Thêm ăn uống</button>
+      <button id="regenerate-btn" class="action-btn action-btn--primary">🔄 Tạo lại</button>
+      <button id="new-trip-btn" class="action-btn action-btn--ghost">＋ Chuyến mới</button>
     </div>
 
-    <!-- Main 2-column layout: Map | Plan -->
     <div id="result-main">
 
-      <!-- Left: Map -->
       <div id="map-col">
         <div id="map-section">
           <div id="map"></div>
@@ -85,22 +110,18 @@
         </div>
       </div>
 
-      <!-- Right: Plan column -->
       <div id="plan-col">
 
-        <!-- Place detail panel (shown on marker click) -->
         <div id="place-detail-panel" class="hidden">
           <div class="detail-panel__header">
-            <button id="detail-back-btn" class="detail-back-btn" aria-label="Quay lại lịch trình">
-              ← Lịch trình
-            </button>
+            <button id="detail-back-btn" class="detail-back-btn">← Lịch trình</button>
             <span class="detail-panel__day-badge" id="detail-day-badge"></span>
           </div>
           <div class="detail-panel__gallery">
             <img id="detail-main-img" alt="" />
             <div class="detail-panel__thumbs" id="detail-thumbs"></div>
-            <button class="detail-nav detail-nav--prev" id="detail-prev" aria-label="Ảnh trước">‹</button>
-            <button class="detail-nav detail-nav--next" id="detail-next" aria-label="Ảnh sau">›</button>
+            <button class="detail-nav detail-nav--prev" id="detail-prev">‹</button>
+            <button class="detail-nav detail-nav--next" id="detail-next">›</button>
           </div>
           <div class="detail-panel__body">
             <div class="detail-panel__type" id="detail-type"></div>
@@ -116,20 +137,18 @@
           </div>
         </div>
 
-        <!-- Itinerary + sidebar (shown when no detail panel) -->
         <div id="plan-content">
           <section id="itinerary-panel">
-            <h2><span aria-hidden="true">📅</span> Lịch trình</h2>
+            <h2>📅 Lịch trình</h2>
             <div id="itinerary-content"></div>
           </section>
-
           <aside id="sidebar">
             <section id="budget-panel">
-              <h2><span aria-hidden="true">💼</span> Ngân sách dự kiến</h2>
+              <h2>💼 Ngân sách dự kiến</h2>
               <div id="budget-content"></div>
             </section>
             <section id="hotel-panel" class="hidden">
-              <h2><span aria-hidden="true">🏨</span> Khách sạn gợi ý</h2>
+              <h2>🏨 Khách sạn gợi ý</h2>
               <div id="hotel-content"></div>
             </section>
           </aside>
