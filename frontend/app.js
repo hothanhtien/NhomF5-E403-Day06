@@ -75,6 +75,14 @@
     el.textContent = content;
     msgs.appendChild(el);
     requestAnimationFrame(() => { msgs.scrollTop = msgs.scrollHeight; });
+
+    // Show badge on bubble if chat is closed and it's an assistant message
+    if (role === "assistant") {
+      const cs = $("chat-section");
+      if (cs?.classList.contains("floating") && cs?.classList.contains("chat-closed")) {
+        $("chat-bubble-badge")?.classList.add("show");
+      }
+    }
   };
 
   // ── Loading ────────────────────────────────────────────
@@ -121,6 +129,63 @@
     return resp.json();
   };
 
+  // ── Floating chat helpers ──────────────────────────────
+  const ensureFloatingChat = () => {
+    const chatSection = $("chat-section");
+    if (!chatSection) return;
+
+    // Inject float header into chat-area (only once)
+    if (!$("chat-float-header")) {
+      const chatArea = $("chat-area");
+      if (chatArea) {
+        const header = document.createElement("div");
+        header.id = "chat-float-header";
+        header.className = "chat-float-header";
+        header.innerHTML = `<span>💬 Chat với AI Planner</span><button id="chat-float-close-btn" title="Đóng">✕</button>`;
+        chatArea.prepend(header);
+      }
+    }
+
+    // Inject bubble button into chat-wrapper (only once)
+    if (!$("chat-bubble-toggle")) {
+      const chatWrapper = $("chat-wrapper");
+      if (chatWrapper) {
+        const btn = document.createElement("button");
+        btn.id = "chat-bubble-toggle";
+        btn.title = "Chat với AI Planner";
+        btn.innerHTML = `<span id="chat-bubble-icon">💬</span><span class="chat-bubble__badge" id="chat-bubble-badge"></span>`;
+        chatWrapper.appendChild(btn);
+      }
+    }
+
+    chatSection.classList.remove("compact");
+    chatSection.classList.add("floating", "chat-closed");
+  };
+
+  const openFloatChat = () => {
+    const cs = $("chat-section");
+    cs?.classList.remove("chat-closed");
+    cs?.classList.add("chat-open");
+    const icon = $("chat-bubble-icon");
+    if (icon) icon.textContent = "✕";
+    $("chat-bubble-badge")?.classList.remove("show");
+    requestAnimationFrame(() => { const m = $("messages"); if (m) m.scrollTop = m.scrollHeight; });
+  };
+
+  const closeFloatChat = () => {
+    const cs = $("chat-section");
+    cs?.classList.remove("chat-open");
+    cs?.classList.add("chat-closed");
+    const icon = $("chat-bubble-icon");
+    if (icon) icon.textContent = "💬";
+  };
+
+  const toggleFloatChat = () => {
+    const cs = $("chat-section");
+    if (cs?.classList.contains("chat-closed")) openFloatChat();
+    else closeFloatChat();
+  };
+
   // ── Render plan ────────────────────────────────────────
   const renderPlan = (plan) => {
     currentPlan = plan;
@@ -129,8 +194,9 @@
     renderBudget(plan.budgetSummary, plan.warnings || []);
     renderHotel(plan.hotel);
 
-    // Show result BEFORE map init so the container has real pixel dimensions
-    $("chat-section")?.classList.add("compact");
+    // Switch chat to floating bubble
+    ensureFloatingChat();
+
     $("result")?.classList.remove("hidden");
     const hint = $("topbar-hint");
     if (hint) hint.textContent = "Nhấn marker hoặc địa điểm để xem chi tiết";
@@ -166,47 +232,96 @@
     }
   };
 
+  // ── Build place card ───────────────────────────────────
+  const buildPlaceCard = (item, dayIdx, itemIdx, dayColor, showTravel) => {
+    const card = document.createElement("div");
+    card.className = "place-card";
+    card.dataset.dayIdx = dayIdx;
+    card.dataset.itemIdx = itemIdx;
+    card.style.setProperty("--timeline-dot-color", dayColor);
+
+    const icon = TYPE_ICON[item.type] || "📍";
+    const photoHtml = item.photoUrl
+      ? `<img class="place-img" loading="lazy" src="${item.photoUrl}" alt="${escapeHtml(item.name)}" onerror="this.parentNode.innerHTML='<div class=place-img-fallback>${icon}</div>'" />`
+      : `<div class="place-img-fallback">${icon}</div>`;
+
+    const costBadge     = item.estimatedCost != null ? `<span class="badge badge--cost">${fmt(item.estimatedCost)}/người</span>` : "";
+    const ratingBadge   = item.rating         ? `<span class="badge badge--rating">⭐ ${item.rating}</span>` : "";
+    const travelBadge   = item.travelTimeFromPrevious && showTravel ? `<span class="badge badge--travel">🚗 ${item.travelTimeFromPrevious}</span>` : "";
+    const durationBadge = item.estimatedDuration ? `<span class="badge badge--duration">⏱ ${item.estimatedDuration}p</span>` : "";
+
+    card.innerHTML = `
+      <div class="place-img-wrap">${photoHtml}</div>
+      <div class="place-info">
+        <div class="place-time">
+          <span class="place-time__dot" style="background:${dayColor}"></span>
+          ${escapeHtml(item.time || "")} · ${escapeHtml(TYPE_LABEL[item.type] || item.type || "")}
+        </div>
+        <div class="place-name">${escapeHtml(item.name || "")}</div>
+        <div class="place-meta">${ratingBadge}${costBadge}${travelBadge}${durationBadge}</div>
+        ${item.reason ? `<div class="place-reason">${escapeHtml(item.reason)}</div>` : ""}
+      </div>`;
+
+    card.addEventListener("click", () => openDetailPanel(item, dayIdx, itemIdx));
+    return card;
+  };
+
+  // ── Session helpers ────────────────────────────────────
+  const SESSIONS = [
+    { label: "☀️ Buổi sáng", key: "morning", test: t => !t || t < "12:00" },
+    { label: "🌤 Buổi chiều", key: "afternoon", test: t => t >= "12:00" && t < "17:30" },
+    { label: "🌙 Buổi tối",   key: "evening",   test: t => t >= "17:30" },
+  ];
+
   // ── Itinerary ──────────────────────────────────────────
   const renderItinerary = (itinerary) => {
     const el = $("itinerary-content");
     if (!el) return;
     el.innerHTML = "";
+
     itinerary.forEach((day, dayIdx) => {
       const block = document.createElement("div");
       block.className = "day-block";
       const dayColor = (currentPlan?.mapData?.days?.[dayIdx] || {}).color || "#3b82f6";
       block.innerHTML = `<div class="day-title" style="border-left-color:${dayColor}">📅 Ngày ${day.day} — ${escapeHtml(day.title || "")}</div>`;
-      (day.items || []).forEach((item, itemIdx) => {
-        const card = document.createElement("div");
-        card.className = "place-card";
-        card.dataset.dayIdx = dayIdx;
-        card.dataset.itemIdx = itemIdx;
 
-        const icon = TYPE_ICON[item.type] || "📍";
-        const photoHtml = item.photoUrl
-          ? `<img class="place-img" loading="lazy" src="${item.photoUrl}" alt="${escapeHtml(item.name)}" onerror="this.parentNode.innerHTML='<div class=place-img-fallback>${icon}</div>'" />`
-          : `<div class="place-img-fallback">${icon}</div>`;
+      const items = day.items || [];
 
-        const costBadge     = item.estimatedCost != null ? `<span class="badge badge--cost">${fmt(item.estimatedCost)}/người</span>` : "";
-        const ratingBadge   = item.rating         ? `<span class="badge badge--rating">⭐ ${item.rating}</span>` : "";
-        const travelBadge   = item.travelTimeFromPrevious && itemIdx > 0 ? `<span class="badge badge--travel">🚗 ${item.travelTimeFromPrevious}</span>` : "";
-        const durationBadge = item.estimatedDuration ? `<span class="badge badge--duration">⏱ ${item.estimatedDuration}p</span>` : "";
+      // Group items by session
+      const grouped = SESSIONS.map(s => ({
+        label: s.label,
+        pairs: items.map((item, idx) => ({ item, idx })).filter(({ item }) => s.test(item.time || "")),
+      })).filter(g => g.pairs.length > 0);
 
-        card.innerHTML = `
-          <div class="place-img-wrap">${photoHtml}</div>
-          <div class="place-info">
-            <div class="place-time">
-              <span class="place-time__dot" style="background:${dayColor}"></span>
-              ${escapeHtml(item.time || "")} · ${escapeHtml(TYPE_LABEL[item.type] || item.type || "")}
-            </div>
-            <div class="place-name">${escapeHtml(item.name || "")}</div>
-            <div class="place-meta">${ratingBadge}${costBadge}${travelBadge}${durationBadge}</div>
-            ${item.reason ? `<div class="place-reason">${escapeHtml(item.reason)}</div>` : ""}
-          </div>`;
+      // If grouping covers all items, render with session headers; else flat
+      const coveredCount = grouped.reduce((n, g) => n + g.pairs.length, 0);
 
-        card.addEventListener("click", () => openDetailPanel(item, dayIdx, itemIdx));
-        block.appendChild(card);
-      });
+      if (grouped.length > 0 && coveredCount === items.length) {
+        grouped.forEach(group => {
+          const sessionDiv = document.createElement("div");
+          sessionDiv.className = "session-block";
+          sessionDiv.innerHTML = `<div class="session-label">${group.label}</div>`;
+
+          const timelineDiv = document.createElement("div");
+          timelineDiv.className = "timeline-items";
+
+          group.pairs.forEach(({ item, idx }) => {
+            timelineDiv.appendChild(buildPlaceCard(item, dayIdx, idx, dayColor, idx > 0));
+          });
+
+          sessionDiv.appendChild(timelineDiv);
+          block.appendChild(sessionDiv);
+        });
+      } else {
+        // fallback: single timeline
+        const timelineDiv = document.createElement("div");
+        timelineDiv.className = "timeline-items";
+        items.forEach((item, idx) => {
+          timelineDiv.appendChild(buildPlaceCard(item, dayIdx, idx, dayColor, idx > 0));
+        });
+        block.appendChild(timelineDiv);
+      }
+
       el.appendChild(block);
     });
   };
@@ -609,7 +724,13 @@
     if (msgs) msgs.innerHTML = "";
     const inp = $("user-input");
     if (inp) inp.value = "";
-    $("chat-section")?.classList.remove("compact");
+
+    // Restore chat section to normal mode
+    const cs = $("chat-section");
+    cs?.classList.remove("floating", "chat-open", "chat-closed", "compact");
+    $("chat-bubble-toggle")?.remove();
+    $("chat-float-header")?.remove();
+
     $("result")?.classList.add("hidden");
     closeDetailPanel();
     const hint = $("topbar-hint");
@@ -624,11 +745,13 @@
   document.addEventListener("click", (e) => {
     const btn = e.target.closest("button, a[id]");
     if (!btn) return;
-    if (btn.id === "send-btn")       { e.preventDefault(); handleSend(); return; }
-    if (btn.id === "regenerate-btn") { handleAction(null); return; }
-    if (btn.id === "new-trip-btn")   { startNewTrip(); return; }
+    if (btn.id === "send-btn")           { e.preventDefault(); handleSend(); return; }
+    if (btn.id === "regenerate-btn")     { handleAction(null); return; }
+    if (btn.id === "new-trip-btn")       { startNewTrip(); return; }
+    if (btn.id === "chat-bubble-toggle") { toggleFloatChat(); return; }
+    if (btn.id === "chat-float-close-btn") { closeFloatChat(); return; }
     const style = btn.dataset?.style;
-    if (style)                       { handleAction(style); return; }
+    if (style)                           { handleAction(style); return; }
     if (btn.classList.contains("chip")) {
       const inp = $("user-input");
       if (inp) { inp.value = btn.dataset.prompt || ""; inp.focus(); }
