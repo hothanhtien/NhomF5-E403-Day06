@@ -2,6 +2,11 @@
 
 Press the button. Count things. FE và BE tách hẳn.
 
+## 🚀 Deploy
+
+- **Live URL:** https://tienop.khoav4.com
+- **GitHub:** https://github.com/hothanhtien/NhomF5-E403-Day06
+
 ## Cấu trúc
 ```
 .
