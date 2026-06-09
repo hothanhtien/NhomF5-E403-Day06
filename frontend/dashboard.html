@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — AI Travel Planner</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body class="dash-body">
+
+  <header id="topbar">
+    <div class="topbar__brand">
+      <span class="logo">✈</span>
+      <span>AI Travel Planner</span>
+    </div>
+    <nav class="dash-nav">
+      <a href="/" class="dash-nav__link">← Lên kế hoạch</a>
+      <span class="dash-nav__link dash-nav__link--active">Dashboard</span>
+    </nav>
+  </header>
+
+  <main class="dash-main">
+    <div class="dash-container">
+
+      <!-- Header -->
+      <div class="dash-header">
+        <div>
+          <h1 class="dash-title">Dashboard</h1>
+          <p class="dash-subtitle">Thống kê lịch trình được tạo bởi AI Travel Planner</p>
+        </div>
+        <button class="dash-refresh-btn" id="refresh-btn">↻ Làm mới</button>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="dash-cards" id="stat-cards">
+        <div class="dash-card dash-card--loading">
+          <div class="dash-card__icon">📋</div>
+          <div class="dash-card__val" id="stat-total">—</div>
+          <div class="dash-card__label">Lịch trình đã tạo</div>
+        </div>
+        <div class="dash-card dash-card--loading">
+          <div class="dash-card__icon">📍</div>
+          <div class="dash-card__val" id="stat-dests">—</div>
+          <div class="dash-card__label">Điểm đến khác nhau</div>
+        </div>
+        <div class="dash-card dash-card--loading">
+          <div class="dash-card__icon">👥</div>
+          <div class="dash-card__val" id="stat-people">—</div>
+          <div class="dash-card__label">Lượt du khách</div>
+        </div>
+        <div class="dash-card dash-card--loading">
+          <div class="dash-card__icon">✅</div>
+          <div class="dash-card__val" id="stat-within">—</div>
+          <div class="dash-card__label">Trong ngân sách</div>
+        </div>
+        <div class="dash-card dash-card--loading">
+          <div class="dash-card__icon">💰</div>
+          <div class="dash-card__val" id="stat-avg-budget">—</div>
+          <div class="dash-card__label">Ngân sách TB</div>
+        </div>
+        <div class="dash-card dash-card--loading">
+          <div class="dash-card__icon">🧾</div>
+          <div class="dash-card__val" id="stat-avg-cost">—</div>
+          <div class="dash-card__label">Chi phí thực TB</div>
+        </div>
+      </div>
+
+      <!-- Two-column: destinations + activity -->
+      <div class="dash-grid-2">
+
+        <!-- Top destinations -->
+        <section class="dash-section">
+          <h2 class="dash-section__title">🏆 Top điểm đến</h2>
+          <div id="top-destinations" class="dash-dest-list">
+            <div class="dash-empty">Đang tải…</div>
+          </div>
+        </section>
+
+        <!-- Activity chart (last 30 days) -->
+        <section class="dash-section">
+          <h2 class="dash-section__title">📈 Hoạt động (30 ngày gần nhất)</h2>
+          <div id="activity-chart" class="dash-chart">
+            <div class="dash-empty">Đang tải…</div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Plans table -->
+      <section class="dash-section">
+        <div class="dash-section__head">
+          <h2 class="dash-section__title">📑 Lịch sử lịch trình</h2>
+          <div class="dash-table-controls">
+            <input type="text" id="search-dest" placeholder="Lọc theo điểm đến…" class="dash-search" />
+          </div>
+        </div>
+        <div class="dash-table-wrap">
+          <table class="dash-table" id="plans-table">
+            <thead>
+              <tr>
+                <th>Điểm đến</th>
+                <th>Thời gian</th>
+                <th>Người</th>
+                <th>Ngân sách</th>
+                <th>Chi phí thực</th>
+                <th>Sở thích</th>
+                <th>Trạng thái</th>
+                <th>Ngày tạo</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="plans-tbody">
+              <tr><td colspan="9" class="dash-empty">Đang tải…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="dash-pagination" id="pagination"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Plan detail modal -->
+  <div id="plan-modal" class="dash-modal hidden">
+    <div class="dash-modal__backdrop" id="modal-backdrop"></div>
+    <div class="dash-modal__box">
+      <div class="dash-modal__header">
+        <h3 id="modal-title">Chi tiết lịch trình</h3>
+        <button class="dash-modal__close" id="modal-close">✕</button>
+      </div>
+      <div class="dash-modal__body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

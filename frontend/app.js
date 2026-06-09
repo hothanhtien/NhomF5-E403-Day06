@@ -20,19 +20,20 @@
   const $ = (id) => document.getElementById(id);
 
   // ── Mapbox token ───────────────────────────────────────
-  const urlToken = new URLSearchParams(location.search).get("mapbox") || "";
-  if (urlToken) {
-    mapboxgl.accessToken = urlToken;
+  const params = new URLSearchParams(location.search);
+  const tokenFromUrl = params.get("mapbox") || "";
+
+  const _configReady = tokenFromUrl
+    ? Promise.resolve(tokenFromUrl)
+    : fetch(`${API_BASE}/api/config`)
+        .then(r => r.json())
+        .then(cfg => cfg.mapboxToken || "")
+        .catch(() => "");
+
+  if (tokenFromUrl) {
+    mapboxgl.accessToken = tokenFromUrl;
   } else {
-    fetch(`${API_BASE}/api/config`)
-      .then(r => r.json())
-      .then(cfg => {
-        if (cfg.mapboxToken) {
-          mapboxgl.accessToken = cfg.mapboxToken;
-          if (currentPlan) renderMap(currentPlan.mapData);
-        }
-      })
-      .catch(() => {});
+    _configReady.then(token => { if (token) mapboxgl.accessToken = token; });
   }
 
   // ── State ──────────────────────────────────────────────
@@ -126,10 +127,12 @@
     msgs.appendChild(el);
     requestAnimationFrame(() => { msgs.scrollTop = msgs.scrollHeight; });
 
-    // Badge bump when widget is closed and AI replies
-    if (role === "assistant" && widgetMode === "float-closed") {
-      unreadCount++;
-      updateFabBadge();
+    // Show badge on bubble if chat is closed and it's an assistant message
+    if (role === "assistant") {
+      const cs = $("chat-section");
+      if (cs?.classList.contains("floating") && cs?.classList.contains("chat-closed")) {
+        $("chat-bubble-badge")?.classList.add("show");
+      }
     }
   };
 
@@ -176,6 +179,63 @@
     return resp.json();
   };
 
+  // ── Floating chat helpers ──────────────────────────────
+  const ensureFloatingChat = () => {
+    const chatSection = $("chat-section");
+    if (!chatSection) return;
+
+    // Inject float header into chat-area (only once)
+    if (!$("chat-float-header")) {
+      const chatArea = $("chat-area");
+      if (chatArea) {
+        const header = document.createElement("div");
+        header.id = "chat-float-header";
+        header.className = "chat-float-header";
+        header.innerHTML = `<span>💬 Chat với AI Planner</span><button id="chat-float-close-btn" title="Đóng">✕</button>`;
+        chatArea.prepend(header);
+      }
+    }
+
+    // Inject bubble button into chat-wrapper (only once)
+    if (!$("chat-bubble-toggle")) {
+      const chatWrapper = $("chat-wrapper");
+      if (chatWrapper) {
+        const btn = document.createElement("button");
+        btn.id = "chat-bubble-toggle";
+        btn.title = "Chat với AI Planner";
+        btn.innerHTML = `<span id="chat-bubble-icon">💬</span><span class="chat-bubble__badge" id="chat-bubble-badge"></span>`;
+        chatWrapper.appendChild(btn);
+      }
+    }
+
+    chatSection.classList.remove("compact");
+    chatSection.classList.add("floating", "chat-closed");
+  };
+
+  const openFloatChat = () => {
+    const cs = $("chat-section");
+    cs?.classList.remove("chat-closed");
+    cs?.classList.add("chat-open");
+    const icon = $("chat-bubble-icon");
+    if (icon) icon.textContent = "✕";
+    $("chat-bubble-badge")?.classList.remove("show");
+    requestAnimationFrame(() => { const m = $("messages"); if (m) m.scrollTop = m.scrollHeight; });
+  };
+
+  const closeFloatChat = () => {
+    const cs = $("chat-section");
+    cs?.classList.remove("chat-open");
+    cs?.classList.add("chat-closed");
+    const icon = $("chat-bubble-icon");
+    if (icon) icon.textContent = "💬";
+  };
+
+  const toggleFloatChat = () => {
+    const cs = $("chat-section");
+    if (cs?.classList.contains("chat-closed")) openFloatChat();
+    else closeFloatChat();
+  };
+
   // ── Render plan ────────────────────────────────────────
   const renderPlan = (plan) => {
     currentPlan = plan;
@@ -184,7 +244,9 @@
     renderBudget(plan.budgetSummary, plan.warnings || []);
     renderHotel(plan.hotel);
 
-    // Show result, update hint
+    // Switch chat to floating bubble
+    ensureFloatingChat();
+
     $("result")?.classList.remove("hidden");
     const hint = $("topbar-hint");
     if (hint) hint.textContent = "Nhấn marker hoặc địa điểm để xem chi tiết";
@@ -221,41 +283,96 @@
     }
   };
 
+  // ── Build place card ───────────────────────────────────
+  const buildPlaceCard = (item, dayIdx, itemIdx, dayColor, showTravel) => {
+    const card = document.createElement("div");
+    card.className = "place-card";
+    card.dataset.dayIdx = dayIdx;
+    card.dataset.itemIdx = itemIdx;
+    card.style.setProperty("--timeline-dot-color", dayColor);
+
+    const icon = TYPE_ICON[item.type] || "📍";
+    const photoHtml = item.photoUrl
+      ? `<img class="place-img" loading="lazy" src="${item.photoUrl}" alt="${escapeHtml(item.name)}" onerror="this.parentNode.innerHTML='<div class=place-img-fallback>${icon}</div>'" />`
+      : `<div class="place-img-fallback">${icon}</div>`;
+
+    const costBadge     = item.estimatedCost != null ? `<span class="badge badge--cost">${fmt(item.estimatedCost)}/người</span>` : "";
+    const ratingBadge   = item.rating         ? `<span class="badge badge--rating">⭐ ${item.rating}</span>` : "";
+    const travelBadge   = item.travelTimeFromPrevious && showTravel ? `<span class="badge badge--travel">🚗 ${item.travelTimeFromPrevious}</span>` : "";
+    const durationBadge = item.estimatedDuration ? `<span class="badge badge--duration">⏱ ${item.estimatedDuration}p</span>` : "";
+
+    card.innerHTML = `
+      <div class="place-img-wrap">${photoHtml}</div>
+      <div class="place-info">
+        <div class="place-time">
+          <span class="place-time__dot" style="background:${dayColor}"></span>
+          ${escapeHtml(item.time || "")} · ${escapeHtml(TYPE_LABEL[item.type] || item.type || "")}
+        </div>
+        <div class="place-name">${escapeHtml(item.name || "")}</div>
+        <div class="place-meta">${ratingBadge}${costBadge}${travelBadge}${durationBadge}</div>
+        ${item.reason ? `<div class="place-reason">${escapeHtml(item.reason)}</div>` : ""}
+      </div>`;
+
+    card.addEventListener("click", () => openDetailPanel(item, dayIdx, itemIdx));
+    return card;
+  };
+
+  // ── Session helpers ────────────────────────────────────
+  const SESSIONS = [
+    { label: "☀️ Buổi sáng", key: "morning", test: t => !t || t < "12:00" },
+    { label: "🌤 Buổi chiều", key: "afternoon", test: t => t >= "12:00" && t < "17:30" },
+    { label: "🌙 Buổi tối",   key: "evening",   test: t => t >= "17:30" },
+  ];
+
   // ── Itinerary ──────────────────────────────────────────
   const renderItinerary = (itinerary) => {
     const el = $("itinerary-content");
     if (!el) return;
     el.innerHTML = "";
+
     itinerary.forEach((day, dayIdx) => {
       const block = document.createElement("div");
       block.className = "day-block";
       const dayColor = currentPlan?.mapData?.days?.[dayIdx]?.color || "#3b82f6";
       block.innerHTML = `<div class="day-title" style="border-left-color:${dayColor}">📅 Ngày ${day.day} — ${escapeHtml(day.title || "")}</div>`;
-      (day.items || []).forEach((item, itemIdx) => {
-        const card = document.createElement("div");
-        card.className = "place-card";
-        card.dataset.dayIdx = dayIdx;
-        card.dataset.itemIdx = itemIdx;
-        const icon = TYPE_ICON[item.type] || "📍";
-        const photoHtml = item.photoUrl
-          ? `<img class="place-img" loading="lazy" src="${item.photoUrl}" alt="${escapeHtml(item.name)}" onerror="this.parentNode.innerHTML='<div class=place-img-fallback>${icon}</div>'" />`
-          : `<div class="place-img-fallback">${icon}</div>`;
-        card.innerHTML = `
-          <div class="place-img-wrap">${photoHtml}</div>
-          <div class="place-info">
-            <div class="place-time"><span class="place-time__dot" style="background:${dayColor}"></span>${escapeHtml(item.time||"")} · ${escapeHtml(TYPE_LABEL[item.type]||item.type||"")}</div>
-            <div class="place-name">${escapeHtml(item.name||"")}</div>
-            <div class="place-meta">
-              ${item.rating ? `<span class="badge badge--rating">⭐ ${item.rating}</span>` : ""}
-              ${item.estimatedCost!=null ? `<span class="badge badge--cost">${fmt(item.estimatedCost)}/người</span>` : ""}
-              ${item.travelTimeFromPrevious&&itemIdx>0 ? `<span class="badge badge--travel">🚗 ${item.travelTimeFromPrevious}</span>` : ""}
-              ${item.estimatedDuration ? `<span class="badge badge--duration">⏱ ${item.estimatedDuration}p</span>` : ""}
-            </div>
-            ${item.reason ? `<div class="place-reason">${escapeHtml(item.reason)}</div>` : ""}
-          </div>`;
-        card.addEventListener("click", () => openDetailPanel(item, dayIdx, itemIdx));
-        block.appendChild(card);
-      });
+
+      const items = day.items || [];
+
+      // Group items by session
+      const grouped = SESSIONS.map(s => ({
+        label: s.label,
+        pairs: items.map((item, idx) => ({ item, idx })).filter(({ item }) => s.test(item.time || "")),
+      })).filter(g => g.pairs.length > 0);
+
+      // If grouping covers all items, render with session headers; else flat
+      const coveredCount = grouped.reduce((n, g) => n + g.pairs.length, 0);
+
+      if (grouped.length > 0 && coveredCount === items.length) {
+        grouped.forEach(group => {
+          const sessionDiv = document.createElement("div");
+          sessionDiv.className = "session-block";
+          sessionDiv.innerHTML = `<div class="session-label">${group.label}</div>`;
+
+          const timelineDiv = document.createElement("div");
+          timelineDiv.className = "timeline-items";
+
+          group.pairs.forEach(({ item, idx }) => {
+            timelineDiv.appendChild(buildPlaceCard(item, dayIdx, idx, dayColor, idx > 0));
+          });
+
+          sessionDiv.appendChild(timelineDiv);
+          block.appendChild(sessionDiv);
+        });
+      } else {
+        // fallback: single timeline
+        const timelineDiv = document.createElement("div");
+        timelineDiv.className = "timeline-items";
+        items.forEach((item, idx) => {
+          timelineDiv.appendChild(buildPlaceCard(item, dayIdx, idx, dayColor, idx > 0));
+        });
+        block.appendChild(timelineDiv);
+      }
+
       el.appendChild(block);
     });
   };
@@ -273,20 +390,56 @@
   };
 
   // ── Hotel ──────────────────────────────────────────────
+  const PRICE_LEVEL_LABEL = {
+    PRICE_LEVEL_FREE: "Miễn phí",
+    PRICE_LEVEL_INEXPENSIVE: "Bình dân (< 400k/đêm)",
+    PRICE_LEVEL_MODERATE: "Trung bình (~800k/đêm)",
+    PRICE_LEVEL_EXPENSIVE: "Cao cấp (~1.5tr/đêm)",
+    PRICE_LEVEL_VERY_EXPENSIVE: "Sang trọng (> 3tr/đêm)",
+  };
+
   const renderHotel = (hotel) => {
     const panel = $("hotel-panel");
     if (!panel) return;
     if (!hotel?.name) { panel.classList.add("hidden"); return; }
     panel.classList.remove("hidden");
-    const photo = hotel.photoUrl ? `<img src="${hotel.photoUrl}" alt="${escapeHtml(hotel.name)}" onerror="this.style.display='none'" />` : `<div style="background:var(--surface-3);width:64px;height:64px;border-radius:6px;display:grid;place-items:center;font-size:1.5rem;">🏨</div>`;
-    const c = $("hotel-content");
-    if (c) c.innerHTML = `<div class="hotel-card">${photo}<div><div class="hotel-card__name">${escapeHtml(hotel.name)}</div><div class="hotel-card__rating">${hotel.rating?"⭐ "+hotel.rating:""}${hotel.reviewCount?" · "+hotel.reviewCount+" reviews":""}</div><div class="hotel-card__price">${hotel.priceLevel||""}</div></div></div>`;
+    const photo = hotel.photoUrl
+      ? `<img src="${hotel.photoUrl}" alt="${escapeHtml(hotel.name)}" onerror="this.style.display='none'" />`
+      : `<div style="background:var(--surface-3);width:64px;height:64px;border-radius:6px;display:grid;place-items:center;font-size:1.5rem;">🏨</div>`;
+
+    const bookingUrl = `https://www.booking.com/search.html?ss=${encodeURIComponent(hotel.name)}`;
+    const mapsUrl = hotel.placeId
+      ? `https://www.google.com/maps/place/?q=place_id:${hotel.placeId}`
+      : (hotel.lat && hotel.lng ? `https://www.google.com/maps?q=${hotel.lat},${hotel.lng}` : "");
+
+    const priceLabel = PRICE_LEVEL_LABEL[hotel.priceLevel] || "";
+
+    const content = $("hotel-content");
+    if (content) content.innerHTML = `
+      <div class="hotel-card">
+        ${photo}
+        <div class="hotel-card__info">
+          <div class="hotel-card__name">${escapeHtml(hotel.name)}</div>
+          <div class="hotel-card__rating">${hotel.rating ? "⭐ " + hotel.rating : ""}${hotel.reviewCount ? " · " + hotel.reviewCount + " reviews" : ""}</div>
+          ${priceLabel ? `<div class="hotel-card__price">${escapeHtml(priceLabel)}</div>` : ""}
+          ${hotel.address ? `<div class="hotel-card__address">📍 ${escapeHtml(hotel.address)}</div>` : ""}
+        </div>
+      </div>
+      <div class="hotel-card__actions">
+        <a class="hotel-btn hotel-btn--primary" href="${bookingUrl}" target="_blank" rel="noopener">🛏 Đặt phòng Booking.com</a>
+        ${mapsUrl ? `<a class="hotel-btn" href="${mapsUrl}" target="_blank" rel="noopener">🗺 Xem Google Maps</a>` : ""}
+      </div>`;
   };
 
   // ── Map ────────────────────────────────────────────────
-  const renderMap = (mapData) => {
+  const renderMap = async (mapData) => {
     const mapEl = $("map");
     if (!mapEl) return;
+    if (!mapboxgl.accessToken) {
+      const token = await _configReady;
+      if (token) mapboxgl.accessToken = token;
+    }
+
     if (!mapboxgl.accessToken) {
       mapEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">⚠️ Mapbox token chưa được cấu hình.</div>';
       return;
@@ -417,6 +570,28 @@
     const dir = $("detail-directions");
     if (dir) { if (item.lat&&item.lng) { dir.href=`https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lng}`; dir.style.display=""; } else dir.style.display="none"; }
 
+    // Booking button — only for hotel items
+    let bookingEl = $("detail-booking");
+    if (item.type === "hotel") {
+      const hotelName = item.bookingName || item.name || "";
+      const bookingUrl = `https://www.booking.com/search.html?ss=${encodeURIComponent(hotelName)}`;
+      if (!bookingEl) {
+        bookingEl = document.createElement("a");
+        bookingEl.id = "detail-booking";
+        bookingEl.className = "modal__btn modal__btn--booking";
+        bookingEl.target = "_blank";
+        bookingEl.rel = "noopener";
+        const actionsEl = document.querySelector(".detail-panel__actions");
+        if (actionsEl) actionsEl.appendChild(bookingEl);
+      }
+      bookingEl.href = bookingUrl;
+      bookingEl.textContent = "🛏 Đặt phòng";
+      bookingEl.style.display = "";
+    } else if (bookingEl) {
+      bookingEl.style.display = "none";
+    }
+
+    // Highlight card in itinerary list
     document.querySelectorAll(".place-card").forEach(c => c.classList.remove("active"));
     const match = document.querySelector(`.place-card[data-day-idx="${dayIdx}"][data-item-idx="${itemIdx}"]`);
     if (match) { match.classList.add("active"); match.scrollIntoView({behavior:"smooth",block:"nearest"}); }
@@ -517,17 +692,46 @@
     }
   };
 
+  const startNewTrip = () => {
+    conversation = [];
+    currentPlan = null;
+    isSending = false;
+    const msgs = $("messages");
+    if (msgs) msgs.innerHTML = "";
+    const inp = $("user-input");
+    if (inp) inp.value = "";
+
+    // Restore chat section to normal mode
+    const cs = $("chat-section");
+    cs?.classList.remove("floating", "chat-open", "chat-closed", "compact");
+    $("chat-bubble-toggle")?.remove();
+    $("chat-float-header")?.remove();
+
+    $("result")?.classList.add("hidden");
+    closeDetailPanel();
+    const hint = $("topbar-hint");
+    if (hint) hint.textContent = "Mô tả chuyến đi của bạn để bắt đầu";
+    markersByDay.flat().forEach(m => m.remove());
+    markersByDay.length = 0;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   // ── Event delegation ───────────────────────────────────
   window.addEventListener("resize", () => { if (map) map.resize(); });
 
   document.addEventListener("click", (e) => {
-    const t = e.target;
-
-    // FAB: toggle open/closed
-    if (t.closest("#chat-fab")) {
-      if (widgetMode==="float-closed") openWidget();
-      else if (widgetMode==="float-open") closeWidget();
-      return;
+    const btn = e.target.closest("button, a[id]");
+    if (!btn) return;
+    if (btn.id === "send-btn")           { e.preventDefault(); handleSend(); return; }
+    if (btn.id === "regenerate-btn")     { handleAction(null); return; }
+    if (btn.id === "new-trip-btn")       { startNewTrip(); return; }
+    if (btn.id === "chat-bubble-toggle") { toggleFloatChat(); return; }
+    if (btn.id === "chat-float-close-btn") { closeFloatChat(); return; }
+    const style = btn.dataset?.style;
+    if (style)                           { handleAction(style); return; }
+    if (btn.classList.contains("chip")) {
+      const inp = $("user-input");
+      if (inp) { inp.value = btn.dataset.prompt || ""; inp.focus(); }
     }
 
     // Minimize button inside panel header

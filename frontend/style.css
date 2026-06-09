@@ -70,11 +70,30 @@ button { font-family: inherit; }
 }
 .topbar__hint { color: var(--text-muted); font-size: .85rem; }
 
+.topbar__dash-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: .83rem;
+  padding: .3rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.topbar__dash-link:hover { background: var(--surface-2); color: var(--accent); border-color: var(--accent); }
+
 /* ── Hero section ─────────────────────────────────────── */
 #hero-section {
   padding: 3.5rem 1.5rem 0;
   text-align: center;
   animation: fadeUp .5s var(--ease);
+}
+
+/* ── Chat section (always visible) ───────────────────── */
+#chat-section {
+  padding: 2rem 1.5rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10,15,31,.5);
 }
 #hero-section.hidden { display: none !important; }
 .hero__inner { max-width: 680px; margin: 0 auto; }
@@ -550,9 +569,47 @@ button { font-family: inherit; }
 
 .hotel-card { display: flex; gap: .75rem; background: var(--surface-2); border-radius: var(--radius-sm); padding: .7rem; margin-top: .7rem; border: 1px solid var(--border); }
 .hotel-card img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
-.hotel-card__name   { font-weight: 700; font-size: .9rem; }
+.hotel-card__info { display: flex; flex-direction: column; gap: .18rem; min-width: 0; }
+.hotel-card__name { font-weight: 700; font-size: .9rem; }
 .hotel-card__rating { color: var(--success); font-size: .8rem; }
-.hotel-card__price  { color: var(--warn); font-size: .83rem; margin-top: .12rem; }
+.hotel-card__price { color: var(--warn); font-size: .83rem; }
+.hotel-card__address { color: var(--text-muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.hotel-card__actions {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-top: .6rem;
+}
+.hotel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .5rem .9rem;
+  border-radius: var(--radius-sm);
+  font-size: .83rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all .15s var(--ease);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.hotel-btn:hover { background: var(--surface-3); transform: translateY(-1px); }
+.hotel-btn--primary {
+  background: linear-gradient(135deg, #003580, #0066cc);
+  border-color: #0066cc;
+  color: #fff;
+}
+.hotel-btn--primary:hover { opacity: .9; }
+
+.modal__btn--booking {
+  background: linear-gradient(135deg, #003580, #0066cc);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+}
 
 /* ── Map markers ──────────────────────────────────────── */
 .travel-marker {
@@ -589,6 +646,190 @@ button { font-family: inherit; }
 .modal__btn--primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #0a0f1f; border: none; font-weight: 700;
+}
+
+/* ── Floating chat bubble ─────────────────────────────── */
+#chat-section.floating {
+  position: fixed !important;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 600;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  width: auto;
+  max-width: 420px;
+  animation: none;
+}
+
+#chat-section.floating #chat-wrapper {
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: .75rem;
+  max-width: 420px;
+}
+
+#chat-section.floating .chat-header { display: none !important; }
+#chat-section.floating .quick-prompts { display: none !important; }
+#chat-section.floating.chat-closed #chat-area { display: none !important; }
+
+#chat-section.floating.chat-open #chat-area {
+  animation: slideUpIn .25s var(--ease);
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow-lg) !important;
+  width: 380px;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+#chat-section.floating.chat-open #messages {
+  max-height: 160px;
+  padding: .75rem .9rem 0;
+}
+
+#chat-section.floating.chat-open #inline-loading {
+  padding: .4rem .9rem;
+}
+
+#chat-section.floating.chat-open .input-row {
+  padding: .5rem .9rem .75rem;
+  margin-top: 0;
+}
+
+/* Float panel header */
+#chat-float-header {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: .6rem .9rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+#chat-section.floating.chat-open #chat-float-header { display: flex; }
+
+#chat-float-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 .2rem;
+  transition: color .15s;
+}
+#chat-float-close-btn:hover { color: var(--text); }
+
+/* Bubble toggle button */
+#chat-bubble-toggle {
+  display: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border: 2px solid rgba(255, 255, 255, .15);
+  color: #0a0f1f;
+  font-size: 1.3rem;
+  cursor: pointer;
+  box-shadow: 0 4px 24px rgba(56, 189, 248, .45);
+  align-items: center;
+  justify-content: center;
+  transition: transform .15s var(--ease), box-shadow .15s;
+  flex-shrink: 0;
+  position: relative;
+}
+
+#chat-section.floating #chat-bubble-toggle { display: flex; }
+#chat-bubble-toggle:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(56,189,248,.65); }
+#chat-bubble-toggle:active { transform: scale(.96); }
+
+.chat-bubble__badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 16px;
+  height: 16px;
+  background: var(--accent-3);
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+  font-size: .65rem;
+  font-weight: 700;
+  color: white;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-bubble__badge.show { display: flex; }
+
+@keyframes slideUpIn {
+  from { opacity: 0; transform: translateY(12px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Timeline itinerary ───────────────────────────────── */
+.session-block { margin-bottom: .85rem; }
+
+.session-label {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-dim);
+  margin-bottom: .55rem;
+}
+
+.session-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  border-radius: 1px;
+}
+
+.timeline-items {
+  position: relative;
+  padding-left: 1.25rem;
+}
+
+.timeline-items::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 14px;
+  bottom: 14px;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--border) 80%, transparent);
+  border-radius: 1px;
+}
+
+.timeline-items .place-card {
+  position: relative;
+  margin-bottom: .45rem;
+}
+
+.timeline-items .place-card::before {
+  content: '';
+  position: absolute;
+  left: -1.05rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--timeline-dot-color, var(--accent));
+  border: 2px solid var(--surface);
+  z-index: 1;
+  box-shadow: 0 0 0 1px var(--timeline-dot-color, var(--accent));
 }
 
 /* ── Responsive ───────────────────────────────────────── */
